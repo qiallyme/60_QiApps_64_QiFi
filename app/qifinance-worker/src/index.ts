@@ -159,12 +159,13 @@ function json(data: any, status = 200) {
 }
 
 // Structured error response for Supabase failures
-async function handleSupabaseError(res: Response): Promise<Response> {
+async function handleSupabaseError(res: Response, route: string): Promise<Response> {
   const errorText = await res.text();
   return json({
     error: "Supabase request failed",
     status: res.status,
-    details: errorText
+    details: errorText,
+    route
   }, res.status === 404 ? 404 : 500);
 }
 
@@ -192,7 +193,7 @@ async function supabaseFetch(env: Env, path: string, init: RequestInit = {}) {
 async function handleGetAccounts(env: Env) {
   const res = await supabaseFetch(env, "/finance_accounts?select=*&order=code.asc");
   if (!res.ok) {
-    return await handleSupabaseError(res);
+    return await handleSupabaseError(res, "/api/finance/accounts");
   }
   const data = await res.json() as any;
   return json(data);
@@ -202,7 +203,7 @@ async function handleGetAccounts(env: Env) {
 async function handleGetCategories(env: Env) {
   const res = await supabaseFetch(env, "/finance_categories?select=*&order=code.asc");
   if (!res.ok) {
-    return await handleSupabaseError(res);
+    return await handleSupabaseError(res, "/api/finance/categories");
   }
   const data = await res.json() as any;
   return json(data);
@@ -219,7 +220,7 @@ async function handleGetTransactions(request: Request, env: Env) {
     `/finance_master_transactions?select=*&order=date.desc&limit=${limit}&offset=${offset}`
   );
   if (!res.ok) {
-    return await handleSupabaseError(res);
+    return await handleSupabaseError(res, "/api/finance/transactions");
   }
   const data = await res.json() as any;
   return json(data);
@@ -229,7 +230,7 @@ async function handleGetTransactions(request: Request, env: Env) {
 async function handleGetTransactionById(id: string, env: Env) {
   const res = await supabaseFetch(env, `/finance_master_transactions?id=eq.${id}&select=*`);
   if (!res.ok) {
-    return await handleSupabaseError(res);
+    return await handleSupabaseError(res, "/api/finance/transactions/:id");
   }
   const data = await res.json() as any;
   if (Array.isArray(data) && data.length === 0) {
@@ -251,7 +252,7 @@ async function handleUpdateTransaction(id: string, request: Request, env: Env) {
   });
 
   if (!res.ok) {
-    return await handleSupabaseError(res);
+    return await handleSupabaseError(res, "/api/finance/transactions/:id");
   }
   const data = await res.json() as any;
   if (Array.isArray(data) && data.length === 0) {
@@ -270,7 +271,7 @@ async function handleDeleteTransaction(id: string, env: Env) {
   });
 
   if (!res.ok) {
-    return await handleSupabaseError(res);
+    return await handleSupabaseError(res, "/api/finance/transactions/:id");
   }
   const data = await res.json() as any;
   if (Array.isArray(data) && data.length === 0) {
@@ -391,13 +392,13 @@ async function handleImportPreview(request: Request, env: Env) {
   // Fetch rules & accounts to match
   const rulesRes = await supabaseFetch(env, "/finance_transaction_rules?select=*");
   if (!rulesRes.ok) {
-    return await handleSupabaseError(rulesRes);
+    return await handleSupabaseError(rulesRes, "/api/finance/import/preview");
   }
   const rules = await rulesRes.json() as any[];
 
   const accountsRes = await supabaseFetch(env, "/finance_accounts?select=id,name,code");
   if (!accountsRes.ok) {
-    return await handleSupabaseError(accountsRes);
+    return await handleSupabaseError(accountsRes, "/api/finance/import/preview");
   }
   const accounts = await accountsRes.json() as any[];
   const accountIds = new Set(accounts.map((a: any) => a.id));
@@ -406,7 +407,7 @@ async function handleImportPreview(request: Request, env: Env) {
   // Grab last 1000 transactions to match against in-memory
   const txRes = await supabaseFetch(env, "/finance_master_transactions?select=date,amount,description&order=date.desc&limit=1000");
   if (!txRes.ok) {
-    return await handleSupabaseError(txRes);
+    return await handleSupabaseError(txRes, "/api/finance/import/preview");
   }
   const existingTransactions = await txRes.json() as any[];
 
@@ -556,7 +557,7 @@ async function handleImportCommit(request: Request, env: Env) {
   });
 
   if (!batchRes.ok) {
-    return await handleSupabaseError(batchRes);
+    return await handleSupabaseError(batchRes, "/api/finance/import/commit");
   }
 
   const batchData = await batchRes.json() as any;
@@ -581,7 +582,7 @@ async function handleImportCommit(request: Request, env: Env) {
   });
 
   if (!rawRowsRes.ok) {
-    return await handleSupabaseError(rawRowsRes);
+    return await handleSupabaseError(rawRowsRes, "/api/finance/import/commit");
   }
 
   // 3. Filter out duplicates & insert actual master transactions
@@ -617,7 +618,7 @@ async function handleImportCommit(request: Request, env: Env) {
     });
 
     if (!txRes.ok) {
-      return await handleSupabaseError(txRes);
+      return await handleSupabaseError(txRes, "/api/finance/import/commit");
     }
     txData = await txRes.json() as any[];
     createdCount = txData.length;
@@ -650,7 +651,7 @@ async function handleCreateAccount(request: Request, env: Env) {
     }
   });
   if (!res.ok) {
-    return await handleSupabaseError(res);
+    return await handleSupabaseError(res, "/api/finance/accounts");
   }
   const data = await res.json() as any;
   return json(data[0]);
@@ -673,7 +674,7 @@ async function handleCreateCategory(request: Request, env: Env) {
     }
   });
   if (!res.ok) {
-    return await handleSupabaseError(res);
+    return await handleSupabaseError(res, "/api/finance/categories");
   }
   const data = await res.json() as any;
   return json(data[0]);
@@ -682,6 +683,23 @@ async function handleCreateCategory(request: Request, env: Env) {
 // Create Transaction
 async function handleCreateTransaction(request: Request, env: Env) {
   const body = await request.json() as any;
+
+  if (Array.isArray(body) || body.csvText || body.rows) {
+    return json({
+      error: "CSV import payloads must be posted to /api/finance/import/commit",
+      route: "/api/finance/transactions",
+      expectedRoute: "/api/finance/import/commit"
+    }, 400);
+  }
+
+  const missingFields = ["date", "description", "amount", "sourceAccountId"].filter((field) => body[field] === undefined || body[field] === null || body[field] === "");
+  if (missingFields.length > 0) {
+    return json({
+      error: "Missing required transaction fields",
+      route: "/api/finance/transactions",
+      missingFields
+    }, 400);
+  }
   
   const txToInsert = {
     date: body.date,
@@ -707,7 +725,7 @@ async function handleCreateTransaction(request: Request, env: Env) {
     }
   });
   if (!res.ok) {
-    return await handleSupabaseError(res);
+    return await handleSupabaseError(res, "/api/finance/transactions");
   }
   const data = await res.json() as any;
   return json(data[0]);

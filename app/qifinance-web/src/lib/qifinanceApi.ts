@@ -5,6 +5,22 @@
 
 const API_BASE_URL = import.meta.env.VITE_QIFINANCE_API_BASE_URL || 'https://api.fi.qially.com';
 
+async function apiError(res: Response, fallback: string): Promise<Error> {
+  let details = "";
+  try {
+    details = await res.text();
+    if (details) {
+      try {
+        details = JSON.stringify(JSON.parse(details));
+      } catch (jsonError) {}
+    }
+  } catch (textError) {
+    details = "";
+  }
+
+  return new Error(details ? `${fallback}: ${details}` : fallback);
+}
+
 export interface Account {
   id: string;
   code: string;
@@ -67,34 +83,34 @@ export const qifinanceApi = {
   // Health check
   async checkHealth(): Promise<{ ok: boolean; service: string; time: string }> {
     const res = await fetch(`${API_BASE_URL}/health`);
-    if (!res.ok) throw new Error("API health check failed");
+    if (!res.ok) throw await apiError(res, "API health check failed");
     return res.json();
   },
 
   // Accounts
   async getAccounts(): Promise<Account[]> {
     const res = await fetch(`${API_BASE_URL}/api/finance/accounts`);
-    if (!res.ok) throw new Error("Failed to fetch accounts");
+    if (!res.ok) throw await apiError(res, "Failed to fetch accounts");
     return res.json();
   },
 
   // Categories
   async getCategories(): Promise<Category[]> {
     const res = await fetch(`${API_BASE_URL}/api/finance/categories`);
-    if (!res.ok) throw new Error("Failed to fetch categories");
+    if (!res.ok) throw await apiError(res, "Failed to fetch categories");
     return res.json();
   },
 
   // Transactions
   async getTransactions(limit = 100, offset = 0): Promise<Transaction[]> {
     const res = await fetch(`${API_BASE_URL}/api/finance/transactions?limit=${limit}&offset=${offset}`);
-    if (!res.ok) throw new Error("Failed to fetch transactions");
+    if (!res.ok) throw await apiError(res, "Failed to fetch transactions");
     return res.json();
   },
 
   async getTransaction(id: string): Promise<Transaction> {
     const res = await fetch(`${API_BASE_URL}/api/finance/transactions/${id}`);
-    if (!res.ok) throw new Error(`Failed to fetch transaction ${id}`);
+    if (!res.ok) throw await apiError(res, `Failed to fetch transaction ${id}`);
     return res.json();
   },
 
@@ -104,7 +120,7 @@ export const qifinanceApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
-    if (!res.ok) throw new Error(`Failed to update transaction ${id}`);
+    if (!res.ok) throw await apiError(res, `Failed to update transaction ${id}`);
     return res.json();
   },
 
@@ -112,7 +128,7 @@ export const qifinanceApi = {
     const res = await fetch(`${API_BASE_URL}/api/finance/transactions/${id}`, {
       method: 'DELETE',
     });
-    if (!res.ok) throw new Error(`Failed to delete transaction ${id}`);
+    if (!res.ok) throw await apiError(res, `Failed to delete transaction ${id}`);
     return res.json();
   },
 
@@ -135,7 +151,7 @@ export const qifinanceApi = {
         hasHeaders,
       }),
     });
-    if (!res.ok) throw new Error("Failed to fetch import preview");
+    if (!res.ok) throw await apiError(res, "Failed to fetch import preview");
     return res.json();
   },
 
@@ -153,7 +169,7 @@ export const qifinanceApi = {
         rows,
       }),
     });
-    if (!res.ok) throw new Error("Failed to commit transactions import");
+    if (!res.ok) throw await apiError(res, "Failed to commit transactions import");
     return res.json();
   },
 
@@ -164,7 +180,7 @@ export const qifinanceApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(account),
     });
-    if (!res.ok) throw new Error("Failed to create account");
+    if (!res.ok) throw await apiError(res, "Failed to create account");
     return res.json();
   },
 
@@ -174,7 +190,7 @@ export const qifinanceApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(category),
     });
-    if (!res.ok) throw new Error("Failed to create category");
+    if (!res.ok) throw await apiError(res, "Failed to create category");
     return res.json();
   },
 
@@ -184,7 +200,7 @@ export const qifinanceApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(transaction),
     });
-    if (!res.ok) throw new Error("Failed to create transaction");
+    if (!res.ok) throw await apiError(res, "Failed to create transaction");
     return res.json();
   },
 };

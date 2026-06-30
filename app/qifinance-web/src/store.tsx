@@ -91,6 +91,51 @@ interface QiContextType {
 
 const QiContext = createContext<QiContextType | undefined>(undefined);
 
+function mapApiTransaction(tx: any): Transaction {
+  return {
+    id: tx.id,
+    date: tx.date,
+    description: tx.description,
+    rawDescription: tx.raw_description || tx.description,
+    amount: Number(tx.amount),
+    sourceAccountId: tx.source_account_id,
+    tags: tx.tags || [],
+    counterparty: tx.counterparty || '',
+    reconciliationId: tx.reconciliation_id,
+    importBatchId: tx.import_batch_id,
+    createdAt: tx.created_at
+  };
+}
+
+function buildLedgerEntriesFromTransactions(txs: Transaction[]): LedgerEntry[] {
+  return txs.flatMap((tx) => {
+    const absoluteAmount = Math.abs(tx.amount);
+    const isOutflow = tx.amount < 0;
+    const matchedAccId = tx.tags.includes('software') ? 'expenses-software' :
+                         tx.tags.includes('travel') ? 'expenses-travel' :
+                         tx.tags.includes('food') ? 'expenses-groceries' : 'suspense-uncategorized';
+
+    return [
+      {
+        id: `led-${tx.id}-src`,
+        transactionId: tx.id,
+        accountId: tx.sourceAccountId,
+        debit: isOutflow ? 0 : absoluteAmount,
+        credit: isOutflow ? absoluteAmount : 0,
+        date: tx.date
+      },
+      {
+        id: `led-${tx.id}-cat`,
+        transactionId: tx.id,
+        accountId: matchedAccId,
+        debit: isOutflow ? absoluteAmount : 0,
+        credit: isOutflow ? 0 : absoluteAmount,
+        date: tx.date
+      }
+    ];
+  });
+}
+
 // Initial mock-up reference data
 const DEFAULT_ACCOUNTS: Account[] = [
   { id: 'assets-checking', code: '1010', name: 'Business Checking', type: 'asset', description: 'Primary business checking account', isActive: true },
@@ -169,48 +214,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         }
 
         if (apiTransactions) {
-          const mappedTxs = apiTransactions.map((tx: any) => ({
-            id: tx.id,
-            date: tx.date,
-            description: tx.description,
-            rawDescription: tx.raw_description || tx.description,
-            amount: Number(tx.amount),
-            sourceAccountId: tx.source_account_id,
-            tags: tx.tags || [],
-            counterparty: tx.counterparty || '',
-            reconciliationId: tx.reconciliation_id,
-            importBatchId: tx.import_batch_id,
-            createdAt: tx.created_at
-          }));
+          const mappedTxs = apiTransactions.map(mapApiTransaction);
           setTransactions(mappedTxs);
-          
-          // Generate balanced ledger entries from these transactions in memory
-          const ledgers: LedgerEntry[] = [];
-          mappedTxs.forEach((tx: any) => {
-            const absoluteAmount = Math.abs(tx.amount);
-            const isOutflow = tx.amount < 0;
-            const matchedAccId = tx.tags.includes('software') ? 'expenses-software' : 
-                                 tx.tags.includes('travel') ? 'expenses-travel' : 
-                                 tx.tags.includes('food') ? 'expenses-groceries' : 'suspense-uncategorized';
-            
-            ledgers.push({
-              id: `led-${tx.id}-src`,
-              transactionId: tx.id,
-              accountId: tx.sourceAccountId,
-              debit: isOutflow ? 0 : absoluteAmount,
-              credit: isOutflow ? absoluteAmount : 0,
-              date: tx.date
-            });
-            ledgers.push({
-              id: `led-${tx.id}-cat`,
-              transactionId: tx.id,
-              accountId: matchedAccId,
-              debit: isOutflow ? absoluteAmount : 0,
-              credit: isOutflow ? 0 : absoluteAmount,
-              date: tx.date
-            });
-          });
-          setLedgerEntries(ledgers);
+          setLedgerEntries(buildLedgerEntriesFromTransactions(mappedTxs));
         }
       } catch (err) {
         console.warn("Could not load from API worker, falling back to localStorage:", err);
@@ -626,6 +632,25 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       memo?: string;
     }[]
   ) => {
+    const localBatchId = `batch-${Date.now()}`;
+    const buildLocalRawRows = (batchId: string, status: RawImportedRow['status']): RawImportedRow[] => rows.map((r, i) => {
+      const descLower = r.description.toLowerCase();
+      let matchedRule = rules.find(rule => descLower.includes(rule.pattern.toLowerCase()));
+
+      return {
+        id: `raw-${batchId}-${i}`,
+        importBatchId: batchId,
+        date: r.date,
+        description: r.description,
+        amount: r.amount,
+        status,
+        suggestedAccountId: r.accountId || (matchedRule ? matchedRule.suggestedAccountId : 'suspense-uncategorized'),
+        suggestedTags: r.tags && r.tags.length > 0 ? r.tags : (matchedRule ? matchedRule.suggestedTags : []),
+        suggestedCounterparty: r.counterparty || (matchedRule ? matchedRule.suggestedCounterparty : ''),
+        memo: r.memo || ''
+      };
+    });
+
     try {
       const apiRows = rows.map((r, idx) => ({
         index: idx,
@@ -642,55 +667,48 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         memo: r.memo || ''
       }));
 
-      await qifinanceApi.commitImport(fileName, sourceAccountId, apiRows);
+      const committed = await qifinanceApi.commitImport(fileName, sourceAccountId, apiRows);
       
       const apiTransactions = await qifinanceApi.getTransactions();
       if (apiTransactions) {
-        const mappedTxs = apiTransactions.map((tx: any) => ({
-          id: tx.id,
-          date: tx.date,
-          description: tx.description,
-          rawDescription: tx.raw_description || tx.description,
-          amount: Number(tx.amount),
-          sourceAccountId: tx.source_account_id,
-          tags: tx.tags || [],
-          counterparty: tx.counterparty || '',
-          reconciliationId: tx.reconciliation_id,
-          importBatchId: tx.import_batch_id,
-          createdAt: tx.created_at
-        }));
-        setTransactions(mappedTxs);
+        const mappedTxs = apiTransactions.map(mapApiTransaction);
+        const nextBatch: ImportBatch = {
+          id: committed.batchId || localBatchId,
+          createdAt: new Date().toISOString(),
+          fileName,
+          rawCount: rows.length,
+          sourceAccountId
+        };
+        const nextRawRows = [
+          ...buildLocalRawRows(nextBatch.id, 'processed'),
+          ...rawRows
+        ];
+        saveAll(
+          accounts,
+          mappedTxs,
+          buildLedgerEntriesFromTransactions(mappedTxs),
+          [nextBatch, ...importBatches],
+          nextRawRows,
+          rules,
+          attachments,
+          statements,
+          schedules
+        );
       }
+      return;
     } catch (err) {
       console.warn("Failed to commit import via API, using local fallback:", err);
     }
 
-    const batchId = `batch-${Date.now()}`;
     const newBatch: ImportBatch = {
-      id: batchId,
+      id: localBatchId,
       createdAt: new Date().toISOString(),
       fileName,
       rawCount: rows.length,
       sourceAccountId
     };
 
-    const newRawRows: RawImportedRow[] = rows.map((r, i) => {
-      const descLower = r.description.toLowerCase();
-      let matchedRule = rules.find(rule => descLower.includes(rule.pattern.toLowerCase()));
-      
-      return {
-        id: `raw-${batchId}-${i}`,
-        importBatchId: batchId,
-        date: r.date,
-        description: r.description,
-        amount: r.amount,
-        status: 'pending',
-        suggestedAccountId: r.accountId || (matchedRule ? matchedRule.suggestedAccountId : 'suspense-uncategorized'),
-        suggestedTags: r.tags && r.tags.length > 0 ? r.tags : (matchedRule ? matchedRule.suggestedTags : []),
-        suggestedCounterparty: r.counterparty || (matchedRule ? matchedRule.suggestedCounterparty : ''),
-        memo: r.memo || ''
-      };
-    });
+    const newRawRows = buildLocalRawRows(localBatchId, 'pending');
 
     const nextBatches = [newBatch, ...importBatches];
     const nextRawRows = [...newRawRows, ...rawRows];

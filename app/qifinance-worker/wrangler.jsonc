@@ -2,5 +2,13 @@
   "name": "qifinance-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-30",
-  "keep_vars": true
+  "keep_vars": true,
+  "secrets": {
+    "required": [
+      "SUPABASE_SERVICE_ROLE_KEY"
+    ]
+  },
+  "vars": {
+    "SUPABASE_URL": "https://emnskvvajdlqixwzjfsm.supabase.co"
+  }
 }
