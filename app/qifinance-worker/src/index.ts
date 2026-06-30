@@ -84,19 +84,22 @@ async function router(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
 
-  // 1. GET /api/finance/accounts
-  if (path === "/api/finance/accounts" && request.method === "GET") {
-    return await handleGetAccounts(env);
+  // 1. GET & POST /api/finance/accounts
+  if (path === "/api/finance/accounts") {
+    if (request.method === "GET") return await handleGetAccounts(env);
+    if (request.method === "POST") return await handleCreateAccount(request, env);
   }
 
-  // 2. GET /api/finance/categories
-  if (path === "/api/finance/categories" && request.method === "GET") {
-    return await handleGetCategories(env);
+  // 2. GET & POST /api/finance/categories
+  if (path === "/api/finance/categories") {
+    if (request.method === "GET") return await handleGetCategories(env);
+    if (request.method === "POST") return await handleCreateCategory(request, env);
   }
 
-  // 3. GET /api/finance/transactions
-  if (path === "/api/finance/transactions" && request.method === "GET") {
-    return await handleGetTransactions(request, env);
+  // 3. GET & POST /api/finance/transactions
+  if (path === "/api/finance/transactions") {
+    if (request.method === "GET") return await handleGetTransactions(request, env);
+    if (request.method === "POST") return await handleCreateTransaction(request, env);
   }
 
   // 4. GET /api/finance/transactions/:id
@@ -592,4 +595,85 @@ async function handleImportCommit(request: Request, env: Env) {
     createdCount,
     transactions: txData
   });
+}
+
+// Create Account
+async function handleCreateAccount(request: Request, env: Env) {
+  const body = await request.json() as any;
+  const res = await supabaseFetch(env, "/finance_accounts", {
+    method: "POST",
+    body: JSON.stringify({
+      id: body.id,
+      code: body.code,
+      name: body.name,
+      type: body.type,
+      description: body.description,
+      is_active: body.isActive ?? body.is_active ?? true
+    }),
+    headers: {
+      "Prefer": "return=representation"
+    }
+  });
+  if (!res.ok) {
+    return json({ error: await res.text() }, res.status);
+  }
+  const data = await res.json() as any;
+  return json(data[0]);
+}
+
+// Create Category
+async function handleCreateCategory(request: Request, env: Env) {
+  const body = await request.json() as any;
+  const res = await supabaseFetch(env, "/finance_categories", {
+    method: "POST",
+    body: JSON.stringify({
+      id: body.id,
+      code: body.code,
+      name: body.name,
+      description: body.description,
+      is_active: body.isActive ?? body.is_active ?? true
+    }),
+    headers: {
+      "Prefer": "return=representation"
+    }
+  });
+  if (!res.ok) {
+    return json({ error: await res.text() }, res.status);
+  }
+  const data = await res.json() as any;
+  return json(data[0]);
+}
+
+// Create Transaction
+async function handleCreateTransaction(request: Request, env: Env) {
+  const body = await request.json() as any;
+  
+  const txToInsert = {
+    date: body.date,
+    description: body.description,
+    raw_description: body.rawDescription || body.description,
+    amount: body.amount,
+    source_account_id: body.sourceAccountId,
+    tags: body.tags || [],
+    counterparty: body.counterparty || "",
+    reconciliation_id: body.reconciliationId || null,
+    import_batch_id: body.importBatchId || null,
+    import_status: body.importStatus || "manual",
+    classification_status: body.classificationStatus || "classified",
+    ledger_status: body.ledgerStatus || "not_posted",
+    source_metadata: body.sourceMetadata || {}
+  };
+
+  const res = await supabaseFetch(env, "/finance_master_transactions", {
+    method: "POST",
+    body: JSON.stringify(txToInsert),
+    headers: {
+      "Prefer": "return=representation"
+    }
+  });
+  if (!res.ok) {
+    return json({ error: await res.text() }, res.status);
+  }
+  const data = await res.json() as any;
+  return json(data[0]);
 }
