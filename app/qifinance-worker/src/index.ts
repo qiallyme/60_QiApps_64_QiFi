@@ -35,6 +35,22 @@ export default {
         }), {
           headers: { "Content-Type": "application/json" }
         });
+      } else if (url.pathname === "/debug/env" && request.method === "GET") {
+        let host: string | null = null;
+        try {
+          if (env.SUPABASE_URL) {
+            host = new URL(env.SUPABASE_URL).host;
+          }
+        } catch (e) {}
+
+        response = new Response(JSON.stringify({
+          ok: true,
+          hasSupabaseUrl: Boolean(env.SUPABASE_URL),
+          hasServiceRoleKey: Boolean(env.SUPABASE_SERVICE_ROLE_KEY),
+          supabaseUrlHost: host
+        }), {
+          headers: { "Content-Type": "application/json" }
+        });
       } else {
         // Dispatch to API routes
         response = await router(request, env);
