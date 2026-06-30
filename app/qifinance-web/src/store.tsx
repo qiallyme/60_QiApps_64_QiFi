@@ -9,6 +9,7 @@ import {
   Rule, Attachment, Statement, RecurringSchedule,
   Counterparty, AccountabilityObligation
 } from './types';
+import { qifinanceApi } from './lib/qifinanceApi';
 
 interface QiContextType {
   accounts: Account[];
@@ -139,35 +140,110 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
   const [obligations, setObligations] = useState<AccountabilityObligation[]>([]);
 
-  // Load from localStorage or seed initial data
+  // Load from API or fallback to localStorage
   useEffect(() => {
-    const savedAccounts = localStorage.getItem('qi_accounts');
-    const savedTransactions = localStorage.getItem('qi_transactions');
-    const savedLedgers = localStorage.getItem('qi_ledgers');
-    const savedBatches = localStorage.getItem('qi_batches');
-    const savedRawRows = localStorage.getItem('qi_raw_rows');
-    const savedRules = localStorage.getItem('qi_rules');
-    const savedAttachments = localStorage.getItem('qi_attachments');
-    const savedStatements = localStorage.getItem('qi_statements');
-    const savedSchedules = localStorage.getItem('qi_schedules');
-    const savedCounterparties = localStorage.getItem('qi_counterparties');
-    const savedObligations = localStorage.getItem('qi_obligations');
+    const loadApiData = async () => {
+      try {
+        // Run health check
+        await qifinanceApi.checkHealth();
 
-    if (savedAccounts) {
-      setAccounts(JSON.parse(savedAccounts));
-      setTransactions(savedTransactions ? JSON.parse(savedTransactions) : []);
-      setLedgerEntries(savedLedgers ? JSON.parse(savedLedgers) : []);
-      setImportBatches(savedBatches ? JSON.parse(savedBatches) : []);
-      setRawRows(savedRawRows ? JSON.parse(savedRawRows) : []);
-      setRules(savedRules ? JSON.parse(savedRules) : []);
-      setAttachments(savedAttachments ? JSON.parse(savedAttachments) : []);
-      setStatements(savedStatements ? JSON.parse(savedStatements) : []);
-      setSchedules(savedSchedules ? JSON.parse(savedSchedules) : []);
-      setCounterparties(savedCounterparties ? JSON.parse(savedCounterparties) : []);
-      setObligations(savedObligations ? JSON.parse(savedObligations) : []);
-    } else {
-      seedDefaultData();
-    }
+        // Fetch API data
+        const [apiAccounts, apiTransactions] = await Promise.all([
+          qifinanceApi.getAccounts(),
+          qifinanceApi.getTransactions(),
+        ]);
+
+        if (apiAccounts && apiAccounts.length > 0) {
+          const mappedAccounts = apiAccounts.map((a: any) => ({
+            id: a.id,
+            code: a.code,
+            name: a.name,
+            type: a.type as any,
+            description: a.description || '',
+            isActive: a.is_active ?? true
+          }));
+          setAccounts(mappedAccounts);
+        } else {
+          // If empty db, fall back or seed
+          throw new Error("No accounts found in database");
+        }
+
+        if (apiTransactions) {
+          const mappedTxs = apiTransactions.map((tx: any) => ({
+            id: tx.id,
+            date: tx.date,
+            description: tx.description,
+            rawDescription: tx.raw_description || tx.description,
+            amount: Number(tx.amount),
+            sourceAccountId: tx.source_account_id,
+            tags: tx.tags || [],
+            counterparty: tx.counterparty || '',
+            reconciliationId: tx.reconciliation_id,
+            importBatchId: tx.import_batch_id,
+            createdAt: tx.created_at
+          }));
+          setTransactions(mappedTxs);
+          
+          // Generate balanced ledger entries from these transactions in memory
+          const ledgers: LedgerEntry[] = [];
+          mappedTxs.forEach((tx: any) => {
+            const absoluteAmount = Math.abs(tx.amount);
+            const isOutflow = tx.amount < 0;
+            const matchedAccId = tx.tags.includes('software') ? 'expenses-software' : 
+                                 tx.tags.includes('travel') ? 'expenses-travel' : 
+                                 tx.tags.includes('food') ? 'expenses-groceries' : 'suspense-uncategorized';
+            
+            ledgers.push({
+              id: `led-${tx.id}-src`,
+              transactionId: tx.id,
+              accountId: tx.sourceAccountId,
+              debit: isOutflow ? 0 : absoluteAmount,
+              credit: isOutflow ? absoluteAmount : 0,
+              date: tx.date
+            });
+            ledgers.push({
+              id: `led-${tx.id}-cat`,
+              transactionId: tx.id,
+              accountId: matchedAccId,
+              debit: isOutflow ? absoluteAmount : 0,
+              credit: isOutflow ? 0 : absoluteAmount,
+              date: tx.date
+            });
+          });
+          setLedgerEntries(ledgers);
+        }
+      } catch (err) {
+        console.warn("Could not load from API worker, falling back to localStorage:", err);
+        const savedAccounts = localStorage.getItem('qi_accounts');
+        const savedTransactions = localStorage.getItem('qi_transactions');
+        const savedLedgers = localStorage.getItem('qi_ledgers');
+        const savedBatches = localStorage.getItem('qi_batches');
+        const savedRawRows = localStorage.getItem('qi_raw_rows');
+        const savedRules = localStorage.getItem('qi_rules');
+        const savedAttachments = localStorage.getItem('qi_attachments');
+        const savedStatements = localStorage.getItem('qi_statements');
+        const savedSchedules = localStorage.getItem('qi_schedules');
+        const savedCounterparties = localStorage.getItem('qi_counterparties');
+        const savedObligations = localStorage.getItem('qi_obligations');
+
+        if (savedAccounts) {
+          setAccounts(JSON.parse(savedAccounts));
+          setTransactions(savedTransactions ? JSON.parse(savedTransactions) : []);
+          setLedgerEntries(savedLedgers ? JSON.parse(savedLedgers) : []);
+          setImportBatches(savedBatches ? JSON.parse(savedBatches) : []);
+          setRawRows(savedRawRows ? JSON.parse(savedRawRows) : []);
+          setRules(savedRules ? JSON.parse(savedRules) : []);
+          setAttachments(savedAttachments ? JSON.parse(savedAttachments) : []);
+          setStatements(savedStatements ? JSON.parse(savedStatements) : []);
+          setSchedules(savedSchedules ? JSON.parse(savedSchedules) : []);
+          setCounterparties(savedCounterparties ? JSON.parse(savedCounterparties) : []);
+          setObligations(savedObligations ? JSON.parse(savedObligations) : []);
+        } else {
+          seedDefaultData();
+        }
+      }
+    };
+    loadApiData();
   }, []);
 
   // Save changes helper
@@ -476,7 +552,19 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // -------------------------
   // Account Actions
   // -------------------------
-  const addAccount = (acc: Omit<Account, 'isActive'>) => {
+  const addAccount = async (acc: Omit<Account, 'isActive'>) => {
+    try {
+      await qifinanceApi.createAccount({
+        id: acc.id,
+        code: acc.code,
+        name: acc.name,
+        type: acc.type,
+        description: acc.description,
+        is_active: true
+      } as any);
+    } catch (err) {
+      console.warn("Failed to create account on API, using localStorage:", err);
+    }
     const newAcc: Account = { ...acc, isActive: true };
     const nextAccs = [...accounts, newAcc];
     saveAll(nextAccs, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, schedules);
@@ -525,7 +613,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // -------------------------
   // Money Ingest / CSV Import Engine
   // -------------------------
-  const importCSVData = (
+  const importCSVData = async (
     fileName: string, 
     sourceAccountId: string, 
     rows: { 
@@ -538,6 +626,45 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       memo?: string;
     }[]
   ) => {
+    try {
+      const apiRows = rows.map((r, idx) => ({
+        index: idx,
+        date: r.date,
+        description: r.description,
+        rawDescription: r.description,
+        amount: r.amount,
+        suggestedAccountId: r.accountId || 'suspense-uncategorized',
+        suggestedCounterparty: r.counterparty || '',
+        suggestedTags: r.tags || [],
+        confidence: 1.0,
+        isDuplicate: false,
+        duplicateMatch: null,
+        memo: r.memo || ''
+      }));
+
+      await qifinanceApi.commitImport(fileName, sourceAccountId, apiRows);
+      
+      const apiTransactions = await qifinanceApi.getTransactions();
+      if (apiTransactions) {
+        const mappedTxs = apiTransactions.map((tx: any) => ({
+          id: tx.id,
+          date: tx.date,
+          description: tx.description,
+          rawDescription: tx.raw_description || tx.description,
+          amount: Number(tx.amount),
+          sourceAccountId: tx.source_account_id,
+          tags: tx.tags || [],
+          counterparty: tx.counterparty || '',
+          reconciliationId: tx.reconciliation_id,
+          importBatchId: tx.import_batch_id,
+          createdAt: tx.created_at
+        }));
+        setTransactions(mappedTxs);
+      }
+    } catch (err) {
+      console.warn("Failed to commit import via API, using local fallback:", err);
+    }
+
     const batchId = `batch-${Date.now()}`;
     const newBatch: ImportBatch = {
       id: batchId,
@@ -548,7 +675,6 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     };
 
     const newRawRows: RawImportedRow[] = rows.map((r, i) => {
-      // Apply rules engine on description
       const descLower = r.description.toLowerCase();
       let matchedRule = rules.find(rule => descLower.includes(rule.pattern.toLowerCase()));
       
@@ -728,7 +854,40 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   // Manual Transaction Generation
-  const addManualTransaction = (tx: Omit<Transaction, 'id' | 'createdAt'>, categoryAccountId: string) => {
+  const addManualTransaction = async (tx: Omit<Transaction, 'id' | 'createdAt'>, categoryAccountId: string) => {
+    try {
+      await qifinanceApi.createTransaction({
+        date: tx.date,
+        description: tx.description,
+        amount: tx.amount,
+        sourceAccountId: tx.sourceAccountId,
+        tags: tx.tags,
+        counterparty: tx.counterparty,
+        reconciliationId: tx.reconciliationId,
+        importBatchId: tx.importBatchId
+      } as any);
+      
+      const apiTransactions = await qifinanceApi.getTransactions();
+      if (apiTransactions) {
+        const mappedTxs = apiTransactions.map((tx: any) => ({
+          id: tx.id,
+          date: tx.date,
+          description: tx.description,
+          rawDescription: tx.raw_description || tx.description,
+          amount: Number(tx.amount),
+          sourceAccountId: tx.source_account_id,
+          tags: tx.tags || [],
+          counterparty: tx.counterparty || '',
+          reconciliationId: tx.reconciliation_id,
+          importBatchId: tx.import_batch_id,
+          createdAt: tx.created_at
+        }));
+        setTransactions(mappedTxs);
+      }
+    } catch (err) {
+      console.warn("Failed to create transaction on API, using local fallback:", err);
+    }
+
     const txId = `tx-${Date.now()}`;
     const newTx: Transaction = {
       ...tx,
@@ -775,20 +934,75 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     saveAll(accounts, nextTxs, nextLedgers, importBatches, rawRows, rules, attachments, statements, schedules);
   };
 
-  const deleteTransaction = (id: string) => {
+  const deleteTransaction = async (id: string) => {
+    try {
+      await qifinanceApi.deleteTransaction(id);
+      
+      const apiTransactions = await qifinanceApi.getTransactions();
+      if (apiTransactions) {
+        const mappedTxs = apiTransactions.map((tx: any) => ({
+          id: tx.id,
+          date: tx.date,
+          description: tx.description,
+          rawDescription: tx.raw_description || tx.description,
+          amount: Number(tx.amount),
+          sourceAccountId: tx.source_account_id,
+          tags: tx.tags || [],
+          counterparty: tx.counterparty || '',
+          reconciliationId: tx.reconciliation_id,
+          importBatchId: tx.import_batch_id,
+          createdAt: tx.created_at
+        }));
+        setTransactions(mappedTxs);
+      }
+    } catch (err) {
+      console.warn("Failed to delete transaction on API, using local fallback:", err);
+    }
+
     const nextTxs = transactions.filter(t => t.id !== id);
     const nextLedgers = ledgerEntries.filter(le => le.transactionId !== id);
     const nextAttachments = attachments.filter(a => a.transactionId !== id);
     
-    // Also, if any raw row had been approved for this, we could soft reset it? Or just keep it as processed. Let's just unlink.
     saveAll(accounts, nextTxs, nextLedgers, importBatches, rawRows, rules, nextAttachments, statements, schedules);
   };
 
-  const updateTransaction = (
+  const updateTransaction = async (
     txId: string,
     updatedTx: Partial<Omit<Transaction, 'id' | 'createdAt'>>,
     categoryAccountId?: string
   ) => {
+    try {
+      const updates: any = {};
+      if (updatedTx.date) updates.date = updatedTx.date;
+      if (updatedTx.description) updates.description = updatedTx.description;
+      if (updatedTx.amount !== undefined) updates.amount = updatedTx.amount;
+      if (updatedTx.sourceAccountId) updates.source_account_id = updatedTx.sourceAccountId;
+      if (updatedTx.tags) updates.tags = updatedTx.tags;
+      if (updatedTx.counterparty) updates.counterparty = updatedTx.counterparty;
+
+      await qifinanceApi.updateTransaction(txId, updates);
+      
+      const apiTransactions = await qifinanceApi.getTransactions();
+      if (apiTransactions) {
+        const mappedTxs = apiTransactions.map((tx: any) => ({
+          id: tx.id,
+          date: tx.date,
+          description: tx.description,
+          rawDescription: tx.raw_description || tx.description,
+          amount: Number(tx.amount),
+          sourceAccountId: tx.source_account_id,
+          tags: tx.tags || [],
+          counterparty: tx.counterparty || '',
+          reconciliationId: tx.reconciliation_id,
+          importBatchId: tx.import_batch_id,
+          createdAt: tx.created_at
+        }));
+        setTransactions(mappedTxs);
+      }
+    } catch (err) {
+      console.warn("Failed to update transaction on API, using local fallback:", err);
+    }
+
     const tx = transactions.find(t => t.id === txId);
     if (!tx) return;
 
