@@ -55,7 +55,7 @@ interface QiContextType {
   bulkApproveRows: (approvals: { rowId: string, data: { date: string; description: string; counterparty: string; accountId: string; tags: string[]; amount: number } }[]) => void;
   bulkIgnoreRows: (rowIds: string[]) => void;
   
-  addManualTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'>, categoryAccountId: string) => void;
+  addManualTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'> & { id?: string }, categoryAccountId: string) => void;
   updateTransaction: (txId: string, updatedTx: Partial<Omit<Transaction, 'id' | 'createdAt'>>, categoryAccountId?: string) => void;
   deleteTransaction: (id: string) => void;
   
@@ -84,12 +84,12 @@ interface QiContextType {
   deleteSchedule: (id: string) => void;
 
   // Counterparty Actions
-  addCounterparty: (cp: Omit<Counterparty, 'id' | 'createdAt' | 'workspaceId'>) => void;
+  addCounterparty: (cp: Omit<Counterparty, 'id' | 'createdAt' | 'workspaceId'> & { id?: string }) => void;
   updateCounterparty: (cp: Counterparty) => void;
   deleteCounterparty: (id: string) => void;
 
   // Obligation Actions
-  addObligation: (ob: Omit<AccountabilityObligation, 'id' | 'createdAt' | 'workspaceId'>) => void;
+  addObligation: (ob: Omit<AccountabilityObligation, 'id' | 'createdAt' | 'workspaceId'> & { id?: string }) => void;
   updateObligation: (ob: AccountabilityObligation) => void;
   deleteObligation: (id: string) => void;
   
