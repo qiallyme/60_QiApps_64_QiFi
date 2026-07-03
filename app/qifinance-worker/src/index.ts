@@ -872,6 +872,7 @@ function mapAccountInput(body: JsonRecord, isUpdate = false): JsonRecord {
     code: body.code,
     name: body.name,
     type: body.type,
+    detail_type: body.detailType ?? body.detail_type,
     description: body.description,
     account_number: body.accountNumber ?? body.account_number,
     routing_number: body.routingNumber ?? body.routing_number,

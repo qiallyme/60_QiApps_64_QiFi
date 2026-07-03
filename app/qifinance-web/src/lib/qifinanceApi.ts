@@ -80,8 +80,17 @@ export interface Account {
   code: string;
   name: string;
   type: string;
+  detail_type?: string;
+  detailType?: string;
   description: string;
   is_active: boolean;
+  account_number?: string;
+  accountNumber?: string;
+  routing_number?: string;
+  routingNumber?: string;
+  institution?: string;
+  parent_account_id?: string;
+  parentAccountId?: string;
 }
 
 export interface Category {

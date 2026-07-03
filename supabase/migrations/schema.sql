@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS public.finance_accounts (
     code VARCHAR(50) NOT NULL UNIQUE,
     name VARCHAR(255) NOT NULL,
     type VARCHAR(50) NOT NULL CHECK (type IN ('asset', 'liability', 'equity', 'revenue', 'expense', 'clearing', 'suspense')),
+    detail_type VARCHAR(100),
     description TEXT,
     account_number VARCHAR(100),
     routing_number VARCHAR(100),
