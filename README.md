@@ -1,20 +1,42 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# QiFi
 
-# Run and deploy your AI Studio app
+Private finance workspace for bills, receipts, CSV imports, reconciliation, and ledger review.
 
-This contains everything you need to run your app locally.
+## Apps
 
-View your app in AI Studio: https://ai.studio/apps/89e182bf-0c9d-4aee-9076-97e74d6e79ca
+- Web app: `app/qifinance-web`
+- Cloudflare Worker API: `app/qifinance-worker`
+- Supabase schema: `supabase/migrations/schema.sql`
 
-## Run Locally
+## Local Web App
 
-**Prerequisites:**  Node.js
+```powershell
+cd app/qifinance-web
+npm install
+npm run dev
+```
 
+The web app defaults to `https://api.fi.qially.com`. Override it in `app/qifinance-web/.env`:
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```ini
+VITE_QIFINANCE_API_BASE_URL="https://api.fi.qially.com"
+```
+
+## Worker Auth
+
+The Worker requires a private bearer token for every route except `/health`.
+
+Set the production secret before deploying:
+
+```powershell
+cd app/qifinance-worker
+npx wrangler secret put QIFI_API_TOKEN
+npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+npx wrangler deploy
+```
+
+For local Worker development, copy `.dev.vars.example` to `.dev.vars` and fill in private values. Do not commit `.dev.vars`.
+
+## Installable App
+
+QiFi includes a web manifest, icons, and service worker. Once deployed over HTTPS, browsers can install it as a standalone app on Windows, Android, iOS, and desktop Chrome/Edge.

@@ -4,6 +4,25 @@
  */
 
 const API_BASE_URL = import.meta.env.VITE_QIFINANCE_API_BASE_URL || 'https://api.fi.qially.com';
+const AUTH_STORAGE_KEY = 'qifi_api_token';
+
+export class QiFinanceAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'QiFinanceAuthError';
+  }
+}
+
+function getStoredAuthToken(): string {
+  return localStorage.getItem(AUTH_STORAGE_KEY) || '';
+}
+
+function authHeaders(init?: RequestInit): Headers {
+  const headers = new Headers(init?.headers);
+  const token = getStoredAuthToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  return headers;
+}
 
 async function apiError(res: Response, fallback: string): Promise<Error> {
   let details = "";
@@ -18,11 +37,18 @@ async function apiError(res: Response, fallback: string): Promise<Error> {
     details = "";
   }
 
-  return new Error(details ? `${fallback}: ${details}` : fallback);
+  const message = details ? `${fallback}: ${details}` : fallback;
+  if (res.status === 401 || res.status === 403 || (res.status === 503 && details.includes('QIFI_API_TOKEN'))) {
+    return new QiFinanceAuthError(message);
+  }
+  return new Error(message);
 }
 
 async function requestJson<T>(path: string, fallback: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, init);
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: authHeaders(init),
+  });
   if (!res.ok) throw await apiError(res, fallback);
   return res.json();
 }
@@ -123,6 +149,22 @@ export interface FinanceState {
 }
 
 export const qifinanceApi = {
+  setAuthToken(token: string): void {
+    localStorage.setItem(AUTH_STORAGE_KEY, token.trim());
+  },
+
+  clearAuthToken(): void {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+  },
+
+  getAuthToken(): string {
+    return getStoredAuthToken();
+  },
+
+  hasAuthToken(): boolean {
+    return Boolean(getStoredAuthToken());
+  },
+
   async checkHealth(): Promise<{ ok: boolean; service: string; time: string }> {
     return requestJson('/health', 'API health check failed');
   },

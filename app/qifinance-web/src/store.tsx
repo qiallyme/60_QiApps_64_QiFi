@@ -9,7 +9,7 @@ import {
   Rule, Attachment, Statement, RecurringSchedule,
   Counterparty, AccountabilityObligation
 } from './types';
-import { qifinanceApi } from './lib/qifinanceApi';
+import { QiFinanceAuthError, qifinanceApi } from './lib/qifinanceApi';
 
 interface QiContextType {
   accounts: Account[];
@@ -364,6 +364,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           if (!apiState.accounts || apiState.accounts.length === 0) throw new Error("No accounts found in database");
           applyApiState(apiState);
         } catch (stateErr) {
+          if (stateErr instanceof QiFinanceAuthError) throw stateErr;
           console.warn("Full finance state endpoint unavailable, loading core API data:", stateErr);
           const [apiAccounts, apiTransactions] = await Promise.all([
             qifinanceApi.getAccounts(),
@@ -386,6 +387,11 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           setObligations(localStorage.getItem('qi_obligations') ? JSON.parse(localStorage.getItem('qi_obligations') || '[]') : []);
         }
       } catch (err) {
+        if (err instanceof QiFinanceAuthError) {
+          qifinanceApi.clearAuthToken();
+          window.location.reload();
+          return;
+        }
         console.warn("Could not load from API worker, falling back to localStorage:", err);
         const savedAccounts = localStorage.getItem('qi_accounts');
         const savedTransactions = localStorage.getItem('qi_transactions');

@@ -6,6 +6,7 @@
 import React from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { QiProvider, useQiStore } from './store';
+import { qifinanceApi } from './lib/qifinanceApi';
 
 // Core Views
 import LedgerView from './components/LedgerView';
@@ -24,7 +25,7 @@ import CategoryRulesView from './components/CategoryRulesView';
 import { 
   TrendingUp, Inbox, Sparkles, Layers, BookOpen,
   Users, FileText, ShieldCheck, BarChart2, ShieldAlert,
-  Settings as SettingsIcon, Menu, X, CheckSquare, Sliders
+  Settings as SettingsIcon, Menu, X, CheckSquare, Sliders, LockKeyhole
 } from 'lucide-react';
 
 function SidebarAndNav() {
@@ -267,9 +268,83 @@ function SidebarAndNav() {
 export default function App() {
   return (
     <HashRouter>
-      <QiProvider>
-        <SidebarAndNav />
-      </QiProvider>
+      <AuthGate>
+        <QiProvider>
+          <SidebarAndNav />
+        </QiProvider>
+      </AuthGate>
     </HashRouter>
+  );
+}
+
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const [unlocked, setUnlocked] = React.useState(() => qifinanceApi.hasAuthToken());
+  const [token, setToken] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [isChecking, setIsChecking] = React.useState(false);
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const nextToken = token.trim();
+    if (!nextToken) return;
+
+    setIsChecking(true);
+    setError('');
+    qifinanceApi.setAuthToken(nextToken);
+
+    try {
+      await qifinanceApi.getState();
+      setUnlocked(true);
+      setToken('');
+    } catch (err) {
+      qifinanceApi.clearAuthToken();
+      setError(err instanceof Error ? err.message : 'Could not unlock QiFi.');
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
+  if (unlocked) return <>{children}</>;
+
+  return (
+    <div className="min-h-screen bg-[#090a0f] flex items-center justify-center p-4 text-zinc-200 font-sans">
+      <form onSubmit={handleSubmit} className="w-full max-w-sm bg-zinc-900/70 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+            <LockKeyhole size={20} />
+          </div>
+          <div>
+            <h1 className="text-base font-bold text-white font-display">Unlock QiFi</h1>
+            <p className="text-xs text-zinc-500">Private finance workspace</p>
+          </div>
+        </div>
+
+        <label className="block space-y-2">
+          <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Access key</span>
+          <input
+            autoFocus
+            type="password"
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/60"
+            autoComplete="current-password"
+          />
+        </label>
+
+        {error && (
+          <div className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">
+            {error}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={isChecking || !token.trim()}
+          className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-zinc-950 font-bold text-sm rounded-xl py-2.5 transition-colors"
+        >
+          {isChecking ? 'Checking...' : 'Unlock'}
+        </button>
+      </form>
+    </div>
   );
 }
