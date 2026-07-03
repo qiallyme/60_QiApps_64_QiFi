@@ -1,6 +1,6 @@
 /**
  * QiFinance API Cloudflare Worker
- * Dedicated financial-data gateway between the App UI and Supabase
+ * Dedicated financial-data gateway between the App UI and Supabase.
  */
 
 export interface Env {
@@ -8,17 +8,67 @@ export interface Env {
   SUPABASE_SERVICE_ROLE_KEY: string;
 }
 
+type JsonRecord = Record<string, any>;
+
 const ALLOWED_ORIGINS = [
   "https://fi.qially.com",
   "https://www.fi.qially.com",
   "https://62-qifi.pages.dev"
 ];
 
+const DOMAIN_ROUTES: Record<string, {
+  table: string;
+  order: string;
+  mapInput?: (body: JsonRecord, isUpdate?: boolean) => JsonRecord;
+}> = {
+  rules: {
+    table: "finance_transaction_rules",
+    order: "created_at.desc",
+    mapInput: mapRuleInput
+  },
+  attachments: {
+    table: "finance_attachments",
+    order: "uploaded_at.desc",
+    mapInput: mapAttachmentInput
+  },
+  statements: {
+    table: "finance_statements",
+    order: "end_date.desc",
+    mapInput: mapStatementInput
+  },
+  schedules: {
+    table: "finance_recurring_schedules",
+    order: "next_due_date.asc",
+    mapInput: mapScheduleInput
+  },
+  counterparties: {
+    table: "finance_counterparties",
+    order: "name.asc",
+    mapInput: mapCounterpartyInput
+  },
+  obligations: {
+    table: "finance_obligations",
+    order: "created_at.desc",
+    mapInput: mapObligationInput
+  },
+  "ledger-entries": {
+    table: "finance_ledger_entries",
+    order: "date.desc"
+  },
+  "import-batches": {
+    table: "finance_import_batches",
+    order: "created_at.desc"
+  },
+  "raw-rows": {
+    table: "finance_import_raw_rows",
+    order: "created_at.desc"
+  }
+};
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return injectCors(request, new Response(null, { status: 204 }));
     }
@@ -26,14 +76,11 @@ export default {
     try {
       let response: Response;
 
-      // Health check endpoint
       if (url.pathname === "/health") {
-        response = new Response(JSON.stringify({
+        response = json({
           ok: true,
           service: "qifinance-api",
           time: new Date().toISOString()
-        }), {
-          headers: { "Content-Type": "application/json" }
         });
       } else if (url.pathname === "/debug/env" && request.method === "GET") {
         let host: string | null = null;
@@ -41,47 +88,44 @@ export default {
           if (env.SUPABASE_URL) {
             host = new URL(env.SUPABASE_URL).host;
           }
-        } catch (e) {}
+        } catch {}
 
-        response = new Response(JSON.stringify({
+        response = json({
           ok: true,
           hasSupabaseUrl: Boolean(env.SUPABASE_URL),
           hasServiceRoleKey: Boolean(env.SUPABASE_SERVICE_ROLE_KEY),
           supabaseUrlHost: host
-        }), {
-          headers: { "Content-Type": "application/json" }
         });
       } else {
-        // Dispatch to API routes
         response = await router(request, env);
       }
 
-      // Inject strict CORS headers before returning
       return injectCors(request, response);
     } catch (error: any) {
-      console.error(error);
-      const errResponse = json({ error: error.message ?? "Unknown internal error" }, 500);
-      return injectCors(request, errResponse);
+      console.error(JSON.stringify({
+        level: "error",
+        route: new URL(request.url).pathname,
+        message: error?.message ?? "Unknown internal error"
+      }));
+      return injectCors(request, json({ error: error?.message ?? "Unknown internal error" }, 500));
     }
   },
 };
 
-// CORS Injector Helper
 function injectCors(request: Request, response: Response): Response {
   const origin = request.headers.get("Origin") || "";
   let allowedOrigin = "";
-  
+
   if (ALLOWED_ORIGINS.includes(origin)) {
     allowedOrigin = origin;
   } else if (
-    origin.startsWith("http://localhost:") || 
-    origin.startsWith("http://127.0.0.1:") || 
+    origin.startsWith("http://localhost:") ||
+    origin.startsWith("http://127.0.0.1:") ||
     origin.endsWith(".pages.dev")
   ) {
     allowedOrigin = origin;
   }
 
-  // Clone response headers and append CORS keys
   const headers = new Headers(response.headers);
   headers.set("Access-Control-Allow-Origin", allowedOrigin || ALLOWED_ORIGINS[0]);
   headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
@@ -95,70 +139,69 @@ function injectCors(request: Request, response: Response): Response {
   });
 }
 
-// Router dispatcher
 async function router(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
 
-  // 1. GET & POST /api/finance/accounts
+  if (path === "/api/finance/state" && request.method === "GET") {
+    return await handleGetState(env);
+  }
+
   if (path === "/api/finance/accounts") {
     if (request.method === "GET") return await handleGetAccounts(env);
     if (request.method === "POST") return await handleCreateAccount(request, env);
   }
 
-  // 2. GET & POST /api/finance/categories
+  const accountMatch = path.match(/^\/api\/finance\/accounts\/([^/]+)$/);
+  if (accountMatch) {
+    const id = decodeURIComponent(accountMatch[1]);
+    if (request.method === "PATCH" || request.method === "PUT") return await handleUpdateAccount(id, request, env);
+    if (request.method === "DELETE") return await handleDeleteAccount(id, env);
+  }
+
   if (path === "/api/finance/categories") {
     if (request.method === "GET") return await handleGetCategories(env);
     if (request.method === "POST") return await handleCreateCategory(request, env);
   }
 
-  // 3. GET & POST /api/finance/transactions
   if (path === "/api/finance/transactions") {
     if (request.method === "GET") return await handleGetTransactions(request, env);
     if (request.method === "POST") return await handleCreateTransaction(request, env);
   }
 
-  // 4. GET /api/finance/transactions/:id
-  // 5. PATCH/PUT /api/finance/transactions/:id
-  // 6. DELETE /api/finance/transactions/:id
   const txMatch = path.match(/^\/api\/finance\/transactions\/([^/]+)$/);
   if (txMatch) {
-    const id = txMatch[1];
-    if (request.method === "GET") {
-      return await handleGetTransactionById(id, env);
-    }
-    if (request.method === "PATCH" || request.method === "PUT") {
-      return await handleUpdateTransaction(id, request, env);
-    }
-    if (request.method === "DELETE") {
-      return await handleDeleteTransaction(id, env);
-    }
+    const id = decodeURIComponent(txMatch[1]);
+    if (request.method === "GET") return await handleGetTransactionById(id, env);
+    if (request.method === "PATCH" || request.method === "PUT") return await handleUpdateTransaction(id, request, env);
+    if (request.method === "DELETE") return await handleDeleteTransaction(id, env);
   }
 
-  // 7. POST /api/finance/import/preview
   if (path === "/api/finance/import/preview" && request.method === "POST") {
     return await handleImportPreview(request, env);
   }
 
-  // 8. POST /api/finance/import/commit
   if (path === "/api/finance/import/commit" && request.method === "POST") {
     return await handleImportCommit(request, env);
+  }
+
+  const domainMatch = path.match(/^\/api\/finance\/([^/]+)(?:\/([^/]+))?$/);
+  if (domainMatch && DOMAIN_ROUTES[domainMatch[1]]) {
+    const domain = domainMatch[1];
+    const id = domainMatch[2] ? decodeURIComponent(domainMatch[2]) : undefined;
+    return await handleDomainRoute(domain, id, request, env);
   }
 
   return json({ error: `Not found: ${request.method} ${path}` }, 404);
 }
 
-// Response Helpers
-function json(data: any, status = 200) {
+function json(data: any, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
   });
 }
 
-// Structured error response for Supabase failures
 async function handleSupabaseError(res: Response, route: string): Promise<Response> {
   const errorText = await res.text();
   return json({
@@ -169,13 +212,17 @@ async function handleSupabaseError(res: Response, route: string): Promise<Respon
   }, res.status === 404 ? 404 : 500);
 }
 
-// Supabase HTTP Inbound Helper
-async function supabaseFetch(env: Env, path: string, init: RequestInit = {}) {
+async function assertSupabaseOk(res: Response, message: string): Promise<void> {
+  if (!res.ok) {
+    throw new Error(`${message}: ${await res.text()}`);
+  }
+}
+
+async function supabaseFetch(env: Env, path: string, init: RequestInit = {}): Promise<Response> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY secrets must be configured in the worker.");
   }
-  
-  const url = `${env.SUPABASE_URL}/rest/v1${path}`;
+
   const headers: Record<string, string> = {
     "apikey": env.SUPABASE_SERVICE_ROLE_KEY,
     "Authorization": `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
@@ -183,246 +230,410 @@ async function supabaseFetch(env: Env, path: string, init: RequestInit = {}) {
     ...(init.headers as Record<string, string> || {}),
   };
 
-  return fetch(url, {
+  return fetch(`${env.SUPABASE_URL}/rest/v1${path}`, {
     ...init,
     headers,
   });
 }
 
-// 1. GET /api/finance/accounts
-async function handleGetAccounts(env: Env) {
-  const res = await supabaseFetch(env, "/finance_accounts?select=*&order=code.asc");
-  if (!res.ok) {
-    return await handleSupabaseError(res, "/api/finance/accounts");
-  }
-  const data = await res.json() as any;
-  return json(data);
+function filterValue(value: string): string {
+  return encodeURIComponent(value);
 }
 
-// 2. GET /api/finance/categories
-async function handleGetCategories(env: Env) {
-  const res = await supabaseFetch(env, "/finance_categories?select=*&order=code.asc");
-  if (!res.ok) {
-    return await handleSupabaseError(res, "/api/finance/categories");
-  }
-  const data = await res.json() as any;
-  return json(data);
+function compact(record: JsonRecord): JsonRecord {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined)
+  );
 }
 
-// 3. GET /api/finance/transactions
-async function handleGetTransactions(request: Request, env: Env) {
+async function selectAll(env: Env, table: string, order: string): Promise<any[]> {
+  const res = await supabaseFetch(env, `/${table}?select=*&order=${order}`);
+  await assertSupabaseOk(res, `Failed to select ${table}`);
+  return await res.json() as any[];
+}
+
+async function handleGetState(env: Env): Promise<Response> {
+  const [
+    accounts,
+    categories,
+    transactions,
+    ledgerEntries,
+    importBatches,
+    rawRows,
+    rules,
+    attachments,
+    statements,
+    schedules,
+    counterparties,
+    obligations
+  ] = await Promise.all([
+    selectAll(env, "finance_accounts", "code.asc"),
+    selectAll(env, "finance_categories", "code.asc"),
+    selectAll(env, "finance_master_transactions", "date.desc"),
+    selectAll(env, "finance_ledger_entries", "date.desc"),
+    selectAll(env, "finance_import_batches", "created_at.desc"),
+    selectAll(env, "finance_import_raw_rows", "created_at.desc"),
+    selectAll(env, "finance_transaction_rules", "created_at.desc"),
+    selectAll(env, "finance_attachments", "uploaded_at.desc"),
+    selectAll(env, "finance_statements", "end_date.desc"),
+    selectAll(env, "finance_recurring_schedules", "next_due_date.asc"),
+    selectAll(env, "finance_counterparties", "name.asc"),
+    selectAll(env, "finance_obligations", "created_at.desc")
+  ]);
+
+  return json({
+    accounts,
+    categories,
+    transactions,
+    ledgerEntries,
+    importBatches,
+    rawRows,
+    rules,
+    attachments,
+    statements,
+    schedules,
+    counterparties,
+    obligations
+  });
+}
+
+async function handleDomainRoute(domain: string, id: string | undefined, request: Request, env: Env): Promise<Response> {
+  const config = DOMAIN_ROUTES[domain];
+  const route = `/api/finance/${domain}${id ? "/:id" : ""}`;
+
+  if (!id && request.method === "GET") {
+    const data = await selectAll(env, config.table, config.order);
+    return json(data);
+  }
+
+  if (!id && request.method === "POST") {
+    if (!config.mapInput) return json({ error: `${domain} cannot be created through this route` }, 405);
+    const body = await request.json() as JsonRecord;
+    const res = await supabaseFetch(env, `/${config.table}`, {
+      method: "POST",
+      body: JSON.stringify(config.mapInput(body, false)),
+      headers: { "Prefer": "return=representation" }
+    });
+    if (!res.ok) return await handleSupabaseError(res, route);
+    const data = await res.json() as any[];
+    return json(data[0]);
+  }
+
+  if (id && (request.method === "PATCH" || request.method === "PUT")) {
+    if (!config.mapInput) return json({ error: `${domain} cannot be updated through this route` }, 405);
+    const body = await request.json() as JsonRecord;
+    const res = await supabaseFetch(env, `/${config.table}?id=eq.${filterValue(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(config.mapInput(body, true)),
+      headers: { "Prefer": "return=representation" }
+    });
+    if (!res.ok) return await handleSupabaseError(res, route);
+    const data = await res.json() as any[];
+    if (data.length === 0) return json({ error: `${domain} item not found` }, 404);
+    return json(data[0]);
+  }
+
+  if (id && request.method === "DELETE") {
+    const res = await supabaseFetch(env, `/${config.table}?id=eq.${filterValue(id)}`, {
+      method: "DELETE",
+      headers: { "Prefer": "return=representation" }
+    });
+    if (!res.ok) return await handleSupabaseError(res, route);
+    const data = await res.json() as any[];
+    if (data.length === 0) return json({ error: `${domain} item not found` }, 404);
+    return json({ message: `${domain} item deleted`, deleted: data[0] });
+  }
+
+  return json({ error: `Method not allowed: ${request.method} ${route}` }, 405);
+}
+
+async function handleGetAccounts(env: Env): Promise<Response> {
+  return json(await selectAll(env, "finance_accounts", "code.asc"));
+}
+
+async function handleGetCategories(env: Env): Promise<Response> {
+  return json(await selectAll(env, "finance_categories", "code.asc"));
+}
+
+async function handleCreateAccount(request: Request, env: Env): Promise<Response> {
+  const body = await request.json() as JsonRecord;
+  const res = await supabaseFetch(env, "/finance_accounts", {
+    method: "POST",
+    body: JSON.stringify(mapAccountInput(body, false)),
+    headers: { "Prefer": "return=representation" }
+  });
+  if (!res.ok) return await handleSupabaseError(res, "/api/finance/accounts");
+  const data = await res.json() as any[];
+  return json(data[0]);
+}
+
+async function handleUpdateAccount(id: string, request: Request, env: Env): Promise<Response> {
+  const body = await request.json() as JsonRecord;
+  const res = await supabaseFetch(env, `/finance_accounts?id=eq.${filterValue(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(mapAccountInput(body, true)),
+    headers: { "Prefer": "return=representation" }
+  });
+  if (!res.ok) return await handleSupabaseError(res, "/api/finance/accounts/:id");
+  const data = await res.json() as any[];
+  if (data.length === 0) return json({ error: "Account not found" }, 404);
+  return json(data[0]);
+}
+
+async function handleDeleteAccount(id: string, env: Env): Promise<Response> {
+  const res = await supabaseFetch(env, `/finance_accounts?id=eq.${filterValue(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_active: false, updated_at: new Date().toISOString() }),
+    headers: { "Prefer": "return=representation" }
+  });
+  if (!res.ok) return await handleSupabaseError(res, "/api/finance/accounts/:id");
+  const data = await res.json() as any[];
+  if (data.length === 0) return json({ error: "Account not found" }, 404);
+  return json({ message: "Account disabled", account: data[0] });
+}
+
+async function handleCreateCategory(request: Request, env: Env): Promise<Response> {
+  const body = await request.json() as JsonRecord;
+  const res = await supabaseFetch(env, "/finance_categories", {
+    method: "POST",
+    body: JSON.stringify({
+      id: body.id,
+      code: body.code,
+      name: body.name,
+      description: body.description,
+      is_active: body.isActive ?? body.is_active ?? true
+    }),
+    headers: { "Prefer": "return=representation" }
+  });
+  if (!res.ok) return await handleSupabaseError(res, "/api/finance/categories");
+  const data = await res.json() as any[];
+  return json(data[0]);
+}
+
+async function handleGetTransactions(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  const limit = url.searchParams.get("limit") || "100";
-  const offset = url.searchParams.get("offset") || "0";
-  
+  const limit = clampInteger(url.searchParams.get("limit"), 100, 1, 1000);
+  const offset = clampInteger(url.searchParams.get("offset"), 0, 0, 100000);
+
   const res = await supabaseFetch(
     env,
     `/finance_master_transactions?select=*&order=date.desc&limit=${limit}&offset=${offset}`
   );
-  if (!res.ok) {
-    return await handleSupabaseError(res, "/api/finance/transactions");
-  }
-  const data = await res.json() as any;
-  return json(data);
+  if (!res.ok) return await handleSupabaseError(res, "/api/finance/transactions");
+  return json(await res.json());
 }
 
-// 4. GET /api/finance/transactions/:id
-async function handleGetTransactionById(id: string, env: Env) {
-  const res = await supabaseFetch(env, `/finance_master_transactions?id=eq.${id}&select=*`);
-  if (!res.ok) {
-    return await handleSupabaseError(res, "/api/finance/transactions/:id");
-  }
-  const data = await res.json() as any;
-  if (Array.isArray(data) && data.length === 0) {
-    return json({ error: "Transaction not found" }, 404);
-  }
+async function handleGetTransactionById(id: string, env: Env): Promise<Response> {
+  const res = await supabaseFetch(env, `/finance_master_transactions?id=eq.${filterValue(id)}&select=*`);
+  if (!res.ok) return await handleSupabaseError(res, "/api/finance/transactions/:id");
+  const data = await res.json() as any[];
+  if (data.length === 0) return json({ error: "Transaction not found" }, 404);
   return json(data[0]);
 }
 
-// 5. PATCH/PUT /api/finance/transactions/:id
-async function handleUpdateTransaction(id: string, request: Request, env: Env) {
-  const updates = await request.json() as any;
-  
-  const res = await supabaseFetch(env, `/finance_master_transactions?id=eq.${id}`, {
+async function handleCreateTransaction(request: Request, env: Env): Promise<Response> {
+  const body = await request.json() as JsonRecord;
+
+  if (Array.isArray(body) || body.csvText || body.rows) {
+    return json({
+      error: "CSV import payloads must be posted to /api/finance/import/commit",
+      route: "/api/finance/transactions",
+      expectedRoute: "/api/finance/import/commit"
+    }, 400);
+  }
+
+  const sourceAccountId = body.sourceAccountId ?? body.source_account_id;
+  const missingFields = [
+    ["date", body.date ?? body.transaction_date],
+    ["description", body.description ?? body.description_clean],
+    ["amount", body.amount],
+    ["sourceAccountId", sourceAccountId]
+  ].filter(([, value]) => value === undefined || value === null || value === "");
+
+  if (missingFields.length > 0) {
+    return json({
+      error: "Missing required transaction fields",
+      route: "/api/finance/transactions",
+      missingFields: missingFields.map(([field]) => field)
+    }, 400);
+  }
+
+  const categoryAccountId = body.categoryAccountId ?? body.category_account_id;
+  const txToInsert = mapTransactionInput(body, false);
+  txToInsert.ledger_status = categoryAccountId ? "posted" : txToInsert.ledger_status;
+
+  const res = await supabaseFetch(env, "/finance_master_transactions", {
+    method: "POST",
+    body: JSON.stringify(txToInsert),
+    headers: { "Prefer": "return=representation" }
+  });
+  if (!res.ok) return await handleSupabaseError(res, "/api/finance/transactions");
+  const data = await res.json() as any[];
+  const created = data[0];
+
+  if (categoryAccountId) {
+    await replaceLedgerEntries(env, created, categoryAccountId);
+  }
+
+  return json(created);
+}
+
+async function handleUpdateTransaction(id: string, request: Request, env: Env): Promise<Response> {
+  const body = await request.json() as JsonRecord;
+  const categoryAccountId = body.categoryAccountId ?? body.category_account_id;
+  const txUpdates = mapTransactionInput(body, true);
+
+  const res = await supabaseFetch(env, `/finance_master_transactions?id=eq.${filterValue(id)}`, {
     method: "PATCH",
-    body: JSON.stringify(updates),
-    headers: {
-      "Prefer": "return=representation"
-    }
+    body: JSON.stringify(txUpdates),
+    headers: { "Prefer": "return=representation" }
   });
 
-  if (!res.ok) {
-    return await handleSupabaseError(res, "/api/finance/transactions/:id");
+  if (!res.ok) return await handleSupabaseError(res, "/api/finance/transactions/:id");
+  const data = await res.json() as any[];
+  if (data.length === 0) return json({ error: "Transaction not found to update" }, 404);
+
+  if (categoryAccountId) {
+    await replaceLedgerEntries(env, data[0], categoryAccountId);
   }
-  const data = await res.json() as any;
-  if (Array.isArray(data) && data.length === 0) {
-    return json({ error: "Transaction not found to update" }, 404);
-  }
+
   return json(data[0]);
 }
 
-// 6. DELETE /api/finance/transactions/:id
-async function handleDeleteTransaction(id: string, env: Env) {
-  const res = await supabaseFetch(env, `/finance_master_transactions?id=eq.${id}`, {
+async function handleDeleteTransaction(id: string, env: Env): Promise<Response> {
+  const res = await supabaseFetch(env, `/finance_master_transactions?id=eq.${filterValue(id)}`, {
     method: "DELETE",
-    headers: {
-      "Prefer": "return=representation"
-    }
+    headers: { "Prefer": "return=representation" }
   });
 
-  if (!res.ok) {
-    return await handleSupabaseError(res, "/api/finance/transactions/:id");
-  }
-  const data = await res.json() as any;
-  if (Array.isArray(data) && data.length === 0) {
-    return json({ error: "Transaction not found to delete" }, 404);
-  }
+  if (!res.ok) return await handleSupabaseError(res, "/api/finance/transactions/:id");
+  const data = await res.json() as any[];
+  if (data.length === 0) return json({ error: "Transaction not found to delete" }, 404);
   return json({ message: "Transaction deleted successfully", deleted: data[0] });
 }
 
-// CSV Parser Helper
 function parseCSV(rawText: string): string[][] {
-  return rawText
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0)
-    .map(line => {
-      const result: string[] = [];
-      let current = '';
-      let inQuotes = false;
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-          result.push(current.trim());
-          current = '';
-        } else {
-          current += char;
-        }
-      }
-      result.push(current.trim());
-      return result;
-    });
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < rawText.length; i++) {
+    const char = rawText[i];
+    const next = rawText[i + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      current += '"';
+      i++;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      row.push(current.trim());
+      current = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && next === "\n") i++;
+      row.push(current.trim());
+      if (row.some((cell) => cell.length > 0)) rows.push(row);
+      row = [];
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  row.push(current.trim());
+  if (row.some((cell) => cell.length > 0)) rows.push(row);
+  return rows;
 }
 
-// Merchant normalizer helper
 function normalizeMerchantName(rawDesc: string): string {
   let clean = rawDesc.toUpperCase().trim();
-  
-  // Remove common processing codes and metadata
-  clean = clean.replace(/TST\*\s*/g, '');
-  clean = clean.replace(/SQ\s*\*\s*/g, '');
-  clean = clean.replace(/\d{4,}/g, ''); // Long digit sequences
-  clean = clean.replace(/\b(INC|LLC|CORP|CO|LTD)\b/g, '');
-  clean = clean.replace(/\s+/g, ' ');
-  clean = clean.trim();
 
-  if (clean.includes('GOOGLE')) return 'Google Cloud';
-  if (clean.includes('GITHUB')) return 'GitHub';
-  if (clean.includes('UBER')) return 'Uber';
-  if (clean.includes('LYFT')) return 'Lyft';
-  if (clean.includes('WHOLE FOODS') || clean.includes('WHOLEFOODS')) return 'Whole Foods';
-  if (clean.includes('FIGMA')) return 'Figma';
-  if (clean.includes('NETFLIX')) return 'Netflix';
-  if (clean.includes('AMAZON')) return 'Amazon';
-  if (clean.includes('VENMO')) return 'Venmo';
-  
-  // Title Case Fallback
+  clean = clean.replace(/TST\*\s*/g, "");
+  clean = clean.replace(/SQ\s*\*\s*/g, "");
+  clean = clean.replace(/\d{4,}/g, "");
+  clean = clean.replace(/\b(INC|LLC|CORP|CO|LTD)\b/g, "");
+  clean = clean.replace(/\s+/g, " ").trim();
+
+  if (clean.includes("GOOGLE")) return "Google Cloud";
+  if (clean.includes("GITHUB")) return "GitHub";
+  if (clean.includes("UBER")) return "Uber";
+  if (clean.includes("LYFT")) return "Lyft";
+  if (clean.includes("WHOLE FOODS") || clean.includes("WHOLEFOODS")) return "Whole Foods";
+  if (clean.includes("FIGMA")) return "Figma";
+  if (clean.includes("NETFLIX")) return "Netflix";
+  if (clean.includes("AMAZON")) return "Amazon";
+  if (clean.includes("VENMO")) return "Venmo";
+
   return clean
     .toLowerCase()
-    .split(' ')
+    .split(" ")
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+    .join(" ");
 }
 
-// AI/Rule classification engine
 function runCategorizationHeuristics(rawDesc: string, rules: any[]): { accountId: string; tags: string[]; counterparty: string; confidence: number } {
   const cleanDesc = rawDesc.toLowerCase();
 
-  // 1. Run through database rules
   for (const rule of rules) {
     if (cleanDesc.includes(rule.pattern.toLowerCase())) {
       return {
         accountId: rule.suggested_account_id,
         tags: rule.suggested_tags || [],
-        counterparty: rule.suggested_counterparty || '',
+        counterparty: rule.suggested_counterparty || "",
         confidence: 0.95
       };
     }
   }
 
-  // 2. Local fallback heuristics
-  if (cleanDesc.includes('gas') || cleanDesc.includes('chevron') || cleanDesc.includes('shell')) {
-    return { accountId: 'expenses-travel', tags: ['travel', 'vehicle'], counterparty: 'Fuel Gas Station', confidence: 0.85 };
+  if (cleanDesc.includes("gas") || cleanDesc.includes("chevron") || cleanDesc.includes("shell")) {
+    return { accountId: "expenses-travel", tags: ["travel", "vehicle"], counterparty: "Fuel Gas Station", confidence: 0.85 };
   }
-  if (cleanDesc.includes('dining') || cleanDesc.includes('mcdonald') || cleanDesc.includes('starbucks') || cleanDesc.includes('cafe')) {
-    return { accountId: 'expenses-dining', tags: ['dining', 'meals'], counterparty: 'Restaurant/Cafe', confidence: 0.80 };
+  if (cleanDesc.includes("dining") || cleanDesc.includes("mcdonald") || cleanDesc.includes("starbucks") || cleanDesc.includes("cafe")) {
+    return { accountId: "expenses-dining", tags: ["dining", "meals"], counterparty: "Restaurant/Cafe", confidence: 0.80 };
   }
-  if (cleanDesc.includes('lyft') || cleanDesc.includes('uber')) {
-    return { accountId: 'expenses-travel', tags: ['travel', 'business'], counterparty: 'Rideshare', confidence: 0.90 };
+  if (cleanDesc.includes("lyft") || cleanDesc.includes("uber")) {
+    return { accountId: "expenses-travel", tags: ["travel", "business"], counterparty: "Rideshare", confidence: 0.90 };
   }
-  if (cleanDesc.includes('transfer') || cleanDesc.includes('payment') || cleanDesc.includes('venmo')) {
-    return { accountId: 'clearing-cc-payment', tags: ['transfer'], counterparty: 'Cleared Fund Transfer', confidence: 0.70 };
+  if (cleanDesc.includes("transfer") || cleanDesc.includes("payment") || cleanDesc.includes("venmo")) {
+    return { accountId: "clearing-cc-payment", tags: ["transfer"], counterparty: "Cleared Fund Transfer", confidence: 0.70 };
   }
 
-  // 3. Fallback Suspense
   return {
-    accountId: 'suspense-uncategorized',
-    tags: ['uncategorized'],
+    accountId: "suspense-uncategorized",
+    tags: ["uncategorized"],
     counterparty: normalizeMerchantName(rawDesc),
     confidence: 0.40
   };
 }
 
-// 7. POST /api/finance/import/preview
-async function handleImportPreview(request: Request, env: Env) {
-  const body = await request.json() as any;
-  const { csvText, fileName, sourceAccountId, columnMappings, hasHeaders } = body;
+async function handleImportPreview(request: Request, env: Env): Promise<Response> {
+  const body = await request.json() as JsonRecord;
+  const { csvText, fileName, columnMappings, hasHeaders } = body;
 
-  if (!csvText) {
-    return json({ error: "Missing csvText in request body" }, 400);
-  }
+  if (!csvText) return json({ error: "Missing csvText in request body" }, 400);
 
   const parsedLines = parseCSV(csvText);
-  if (parsedLines.length === 0) {
-    return json({ error: "Empty or invalid CSV file" }, 400);
-  }
+  if (parsedLines.length === 0) return json({ error: "Empty or invalid CSV file" }, 400);
 
-  // Fetch rules & accounts to match
-  const rulesRes = await supabaseFetch(env, "/finance_transaction_rules?select=*");
-  if (!rulesRes.ok) {
-    return await handleSupabaseError(rulesRes, "/api/finance/import/preview");
-  }
-  const rules = await rulesRes.json() as any[];
-
-  const accountsRes = await supabaseFetch(env, "/finance_accounts?select=id,name,code");
-  if (!accountsRes.ok) {
-    return await handleSupabaseError(accountsRes, "/api/finance/import/preview");
-  }
-  const accounts = await accountsRes.json() as any[];
+  const rules = await selectAll(env, "finance_transaction_rules", "created_at.desc");
+  const accounts = await selectAll(env, "finance_accounts", "code.asc");
   const accountIds = new Set(accounts.map((a: any) => a.id));
 
-  // Fetch existing transactions to verify duplicates
-  // Grab last 1000 transactions to match against in-memory
   const txRes = await supabaseFetch(env, "/finance_master_transactions?select=date,amount,description&order=date.desc&limit=1000");
-  if (!txRes.ok) {
-    return await handleSupabaseError(txRes, "/api/finance/import/preview");
-  }
+  if (!txRes.ok) return await handleSupabaseError(txRes, "/api/finance/import/preview");
   const existingTransactions = await txRes.json() as any[];
-
   const dataLines = hasHeaders ? parsedLines.slice(1) : parsedLines;
 
-  // Process rows
   const previewRows = dataLines.map((line, lineIndex) => {
     const rowData = {
-      date: '',
-      description: '',
+      date: "",
+      description: "",
       amount: 0,
-      counterparty: '',
-      accountId: '',
+      counterparty: "",
+      accountId: "",
       tags: [] as string[],
-      memo: ''
+      memo: ""
     };
 
     let parsedOutflow = 0;
@@ -430,40 +641,35 @@ async function handleImportPreview(request: Request, env: Env) {
     let hasOutflowCol = false;
     let hasInflowCol = false;
 
-    // Apply column mappings
     for (let i = 0; i < line.length; i++) {
-      const val = (line[i] || '').trim();
+      const val = (line[i] || "").trim();
       const targets = columnMappings[i] || [];
-      
-      targets.forEach((t: string) => {
-        if (t === 'date') {
+
+      targets.forEach((target: string) => {
+        if (target === "date") {
           rowData.date = val;
-        } else if (t === 'description') {
+        } else if (target === "description") {
           rowData.description = rowData.description ? `${rowData.description} ${val}` : val;
-        } else if (t === 'amount') {
+        } else if (target === "amount") {
           hasOutflowCol = true;
-          const cleanVal = val.replace(/[$,\s]/g, '');
-          const num = Number(cleanVal);
+          const num = Number(val.replace(/[$,\s]/g, ""));
           if (!isNaN(num)) parsedOutflow = num;
-        } else if (t === 'inflow_amount') {
+        } else if (target === "inflow_amount") {
           hasInflowCol = true;
-          const cleanVal = val.replace(/[$,\s]/g, '');
-          const num = Number(cleanVal);
+          const num = Number(val.replace(/[$,\s]/g, ""));
           if (!isNaN(num)) parsedInflow = num;
-        } else if (t === 'counterparty') {
+        } else if (target === "counterparty") {
           rowData.counterparty = rowData.counterparty ? `${rowData.counterparty} ${val}` : val;
-        } else if (t === 'accountId') {
+        } else if (target === "accountId") {
           rowData.accountId = val;
-        } else if (t === 'tags') {
-          const parsedTags = val.split(/[,;|]/).map(x => x.trim()).filter(Boolean);
-          rowData.tags = [...rowData.tags, ...parsedTags];
-        } else if (t === 'memo') {
+        } else if (target === "tags") {
+          rowData.tags = [...rowData.tags, ...val.split(/[,;|]/).map(x => x.trim()).filter(Boolean)];
+        } else if (target === "memo") {
           rowData.memo = rowData.memo ? `${rowData.memo} ${val}` : val;
         }
       });
     }
 
-    // Resolve outflow vs inflow
     if (hasOutflowCol && hasInflowCol) {
       if (parsedOutflow !== 0 && parsedInflow === 0) {
         rowData.amount = parsedOutflow > 0 ? -parsedOutflow : parsedOutflow;
@@ -476,28 +682,20 @@ async function handleImportPreview(request: Request, env: Env) {
       rowData.amount = parsedOutflow;
     }
 
-    // Normalize Date format
     let dateStr = rowData.date;
     try {
       const parsedDate = new Date(rowData.date);
-      if (!isNaN(parsedDate.getTime())) {
-        dateStr = parsedDate.toISOString().split('T')[0];
-      }
-    } catch (e) {}
+      if (!isNaN(parsedDate.getTime())) dateStr = parsedDate.toISOString().split("T")[0];
+    } catch {}
 
-    // Determine category / rules suggestions
     const suggestion = runCategorizationHeuristics(rowData.description, rules);
-    
-    // Check if suggested category exists in db accounts
     const targetAccountId = rowData.accountId || suggestion.accountId;
-    const finalAccountId = accountIds.has(targetAccountId) ? targetAccountId : 'suspense-uncategorized';
-
-    // Deduplication algorithm: check within 3 days, matching absolute amount
+    const finalAccountId = accountIds.has(targetAccountId) ? targetAccountId : "suspense-uncategorized";
     const rowAbsAmount = Math.abs(rowData.amount);
     const rowTime = new Date(dateStr).getTime();
-    
+
     const duplicates = existingTransactions.filter((tx: any) => {
-      const txAbsAmount = Math.abs(tx.amount);
+      const txAbsAmount = Math.abs(Number(tx.amount));
       const txTime = new Date(tx.date).getTime();
       const diffDays = Math.abs(rowTime - txTime) / (1000 * 60 * 60 * 24);
       return diffDays <= 3 && Math.abs(rowAbsAmount - txAbsAmount) < 0.01;
@@ -517,59 +715,54 @@ async function handleImportPreview(request: Request, env: Env) {
       duplicateMatch: duplicates.length > 0 ? duplicates[0] : null,
       memo: rowData.memo
     };
-  }).filter(r => r.date !== '' && r.description !== '');
-
-  // Extract missing counterparties and categories
-  const missingCategories = Array.from(new Set(
-    previewRows.map(r => r.suggestedAccountId).filter(id => !accountIds.has(id))
-  ));
+  }).filter(r => r.date !== "" && r.description !== "");
 
   return json({
     fileName,
     rawCount: previewRows.length,
     rows: previewRows,
-    missingCategories,
-    missingCounterparties: [] // For now populated in client review if needed
+    missingCategories: Array.from(new Set(previewRows.map(r => r.suggestedAccountId).filter(id => !accountIds.has(id)))),
+    missingCounterparties: []
   });
 }
 
-// 8. POST /api/finance/import/commit
-async function handleImportCommit(request: Request, env: Env) {
-  const body = await request.json() as any;
+async function handleImportCommit(request: Request, env: Env): Promise<Response> {
+  const body = await request.json() as JsonRecord;
   const { fileName, sourceAccountId, rows } = body;
 
   if (!rows || !Array.isArray(rows)) {
     return json({ error: "Missing rows array in request body" }, 400);
   }
 
-  // 1. Create the import batch
   const batchRes = await supabaseFetch(env, "/finance_import_batches", {
     method: "POST",
     body: JSON.stringify({
       file_name: fileName,
+      original_filename: fileName,
       raw_count: rows.length,
+      row_count: rows.length,
       source_account_id: sourceAccountId,
-      status: "committed"
+      status: "committed",
+      imported_at: new Date().toISOString()
     }),
-    headers: {
-      "Prefer": "return=representation"
-    }
+    headers: { "Prefer": "return=representation" }
   });
 
-  if (!batchRes.ok) {
-    return await handleSupabaseError(batchRes, "/api/finance/import/commit");
-  }
-
-  const batchData = await batchRes.json() as any;
+  if (!batchRes.ok) return await handleSupabaseError(batchRes, "/api/finance/import/commit");
+  const batchData = await batchRes.json() as any[];
   const batchId = batchData[0].id;
 
-  // 2. Insert into raw rows staging for history
-  const rawRowsToInsert = rows.map((row: any) => ({
+  const rawRowsToInsert = rows.map((row: any, idx: number) => ({
     import_batch_id: batchId,
+    batch_id: batchId,
+    row_number: row.index ?? idx,
+    raw_data: row,
+    raw_hash: `${batchId}:${row.index ?? idx}:${row.date}:${row.amount}:${row.description}`,
     date: row.date,
     description: row.description,
     amount: row.amount,
     status: row.isDuplicate ? "ignored" : "processed",
+    normalized_status: row.isDuplicate ? "ignored" : "processed",
     suggested_account_id: row.suggestedAccountId || "suspense-uncategorized",
     suggested_counterparty: row.suggestedCounterparty || "",
     suggested_tags: row.suggestedTags || [],
@@ -580,153 +773,235 @@ async function handleImportCommit(request: Request, env: Env) {
     method: "POST",
     body: JSON.stringify(rawRowsToInsert)
   });
+  if (!rawRowsRes.ok) return await handleSupabaseError(rawRowsRes, "/api/finance/import/commit");
 
-  if (!rawRowsRes.ok) {
-    return await handleSupabaseError(rawRowsRes, "/api/finance/import/commit");
-  }
-
-  // 3. Filter out duplicates & insert actual master transactions
   const nonDuplicateRows = rows.filter((row: any) => !row.isDuplicate);
-  let createdCount = 0;
   let txData: any[] = [];
 
   if (nonDuplicateRows.length > 0) {
-    const transactionsToInsert = nonDuplicateRows.map((row: any) => ({
-      date: row.date,
-      description: row.description,
-      raw_description: row.description,
-      amount: row.amount,
-      source_account_id: sourceAccountId,
-      tags: row.suggestedTags || [],
-      counterparty: row.suggestedCounterparty || "",
-      import_batch_id: batchId,
-      import_status: "imported",
-      classification_status: row.suggestedAccountId ? "classified" : "unclassified",
-      ledger_status: "not_posted",
-      source_metadata: {
-        raw_row_index: row.index,
-        import_confidence: row.confidence
-      }
-    }));
+    const transactionsToInsert = nonDuplicateRows.map((row: any) => {
+      const record = mapTransactionInput({
+        date: row.date,
+        description: row.description,
+        rawDescription: row.rawDescription || row.description,
+        amount: row.amount,
+        sourceAccountId,
+        tags: row.suggestedTags || [],
+        counterparty: row.suggestedCounterparty || "",
+        importBatchId: batchId,
+        importStatus: "imported",
+        classificationStatus: row.suggestedAccountId ? "classified" : "unclassified",
+        ledgerStatus: "posted",
+        sourceMetadata: {
+          raw_row_index: row.index,
+          import_confidence: row.confidence
+        }
+      }, false);
+      return record;
+    });
 
     const txRes = await supabaseFetch(env, "/finance_master_transactions", {
       method: "POST",
       body: JSON.stringify(transactionsToInsert),
-      headers: {
-        "Prefer": "return=representation"
-      }
+      headers: { "Prefer": "return=representation" }
     });
 
-    if (!txRes.ok) {
-      return await handleSupabaseError(txRes, "/api/finance/import/commit");
-    }
+    if (!txRes.ok) return await handleSupabaseError(txRes, "/api/finance/import/commit");
     txData = await txRes.json() as any[];
-    createdCount = txData.length;
+
+    for (let i = 0; i < txData.length; i++) {
+      const row = nonDuplicateRows[i];
+      await replaceLedgerEntries(env, txData[i], row.suggestedAccountId || "suspense-uncategorized");
+    }
   }
 
   return json({
     message: "CSV statement imported successfully",
     batchId,
     totalRows: rows.length,
-    createdCount,
+    createdCount: txData.length,
     transactions: txData
   });
 }
 
-// Create Account
-async function handleCreateAccount(request: Request, env: Env) {
-  const body = await request.json() as any;
-  const res = await supabaseFetch(env, "/finance_accounts", {
-    method: "POST",
-    body: JSON.stringify({
-      id: body.id,
-      code: body.code,
-      name: body.name,
-      type: body.type,
-      description: body.description,
-      is_active: body.isActive ?? body.is_active ?? true
-    }),
-    headers: {
-      "Prefer": "return=representation"
-    }
-  });
-  if (!res.ok) {
-    return await handleSupabaseError(res, "/api/finance/accounts");
-  }
-  const data = await res.json() as any;
-  return json(data[0]);
-}
-
-// Create Category
-async function handleCreateCategory(request: Request, env: Env) {
-  const body = await request.json() as any;
-  const res = await supabaseFetch(env, "/finance_categories", {
-    method: "POST",
-    body: JSON.stringify({
-      id: body.id,
-      code: body.code,
-      name: body.name,
-      description: body.description,
-      is_active: body.isActive ?? body.is_active ?? true
-    }),
-    headers: {
-      "Prefer": "return=representation"
-    }
-  });
-  if (!res.ok) {
-    return await handleSupabaseError(res, "/api/finance/categories");
-  }
-  const data = await res.json() as any;
-  return json(data[0]);
-}
-
-// Create Transaction
-async function handleCreateTransaction(request: Request, env: Env) {
-  const body = await request.json() as any;
-
-  if (Array.isArray(body) || body.csvText || body.rows) {
-    return json({
-      error: "CSV import payloads must be posted to /api/finance/import/commit",
-      route: "/api/finance/transactions",
-      expectedRoute: "/api/finance/import/commit"
-    }, 400);
-  }
-
-  const missingFields = ["date", "description", "amount", "sourceAccountId"].filter((field) => body[field] === undefined || body[field] === null || body[field] === "");
-  if (missingFields.length > 0) {
-    return json({
-      error: "Missing required transaction fields",
-      route: "/api/finance/transactions",
-      missingFields
-    }, 400);
-  }
-  
-  const txToInsert = {
-    date: body.date,
+function mapAccountInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return compact({
+    id: isUpdate ? undefined : body.id,
+    code: body.code,
+    name: body.name,
+    type: body.type,
     description: body.description,
-    raw_description: body.rawDescription || body.description,
-    amount: body.amount,
-    source_account_id: body.sourceAccountId,
-    tags: body.tags || [],
-    counterparty: body.counterparty || "",
-    reconciliation_id: body.reconciliationId || null,
-    import_batch_id: body.importBatchId || null,
-    import_status: body.importStatus || "manual",
-    classification_status: body.classificationStatus || "classified",
-    ledger_status: body.ledgerStatus || "not_posted",
-    source_metadata: body.sourceMetadata || {}
-  };
-
-  const res = await supabaseFetch(env, "/finance_master_transactions", {
-    method: "POST",
-    body: JSON.stringify(txToInsert),
-    headers: {
-      "Prefer": "return=representation"
-    }
+    account_number: body.accountNumber ?? body.account_number,
+    routing_number: body.routingNumber ?? body.routing_number,
+    institution: body.institution,
+    parent_account_id: body.parentAccountId ?? body.parent_account_id ?? null,
+    is_active: body.isActive ?? body.is_active,
+    updated_at: new Date().toISOString()
   });
-  if (!res.ok) {
-    return await handleSupabaseError(res, "/api/finance/transactions");
+}
+
+function mapRuleInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return compact({
+    id: isUpdate ? undefined : (body.id ?? `rule-${Date.now()}`),
+    pattern: body.pattern,
+    suggested_account_id: body.suggestedAccountId ?? body.suggested_account_id,
+    suggested_tags: body.suggestedTags ?? body.suggested_tags ?? [],
+    suggested_counterparty: body.suggestedCounterparty ?? body.suggested_counterparty ?? "",
+    description: body.description ?? "",
+    updated_at: new Date().toISOString()
+  });
+}
+
+function mapAttachmentInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return compact({
+    id: isUpdate ? undefined : (body.id ?? `attach-${crypto.randomUUID()}`),
+    transaction_id: body.transactionId ?? body.transaction_id ?? null,
+    statement_id: body.statementId ?? body.statement_id ?? null,
+    account_id: body.accountId ?? body.account_id ?? null,
+    counterparty_id: body.counterpartyId ?? body.counterparty_id ?? null,
+    obligation_id: body.obligationId ?? body.obligation_id ?? null,
+    schedule_id: body.scheduleId ?? body.schedule_id ?? null,
+    file_name: body.fileName ?? body.file_name,
+    file_type: body.fileType ?? body.file_type,
+    data_url: body.dataUrl ?? body.data_url,
+    uploaded_at: body.uploadedAt ?? body.uploaded_at ?? new Date().toISOString(),
+    notes: body.notes ?? ""
+  });
+}
+
+function mapStatementInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return compact({
+    id: isUpdate ? undefined : (body.id ?? `stmt-${crypto.randomUUID()}`),
+    account_id: body.accountId ?? body.account_id,
+    start_date: body.startDate ?? body.start_date,
+    end_date: body.endDate ?? body.end_date,
+    opening_balance: body.openingBalance ?? body.opening_balance,
+    closing_balance: body.closingBalance ?? body.closing_balance,
+    is_reconciled: body.isReconciled ?? body.is_reconciled,
+    reconciled_at: body.reconciledAt ?? body.reconciled_at ?? null,
+    updated_at: new Date().toISOString()
+  });
+}
+
+function mapScheduleInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return compact({
+    id: isUpdate ? undefined : (body.id ?? `sched-${crypto.randomUUID()}`),
+    name: body.name,
+    amount: body.amount,
+    account_id: body.accountId ?? body.account_id,
+    source_account_id: body.sourceAccountId ?? body.source_account_id,
+    frequency: body.frequency,
+    next_due_date: body.nextDueDate ?? body.next_due_date,
+    tags: body.tags ?? [],
+    is_active: body.isActive ?? body.is_active,
+    updated_at: new Date().toISOString()
+  });
+}
+
+function mapCounterpartyInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return compact({
+    id: isUpdate ? undefined : (body.id ?? `cp-${crypto.randomUUID()}`),
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
+    name: body.name,
+    description: body.description ?? "",
+    tags: body.tags ?? [],
+    is_business: body.isBusiness ?? body.is_business,
+    relationship_type: body.relationshipType ?? body.relationship_type ?? null,
+    updated_at: new Date().toISOString()
+  });
+}
+
+function mapObligationInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return compact({
+    id: isUpdate ? undefined : (body.id ?? `obl-${crypto.randomUUID()}`),
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
+    counterparty_id: body.counterpartyId ?? body.counterparty_id,
+    amount: body.amount,
+    type: body.type,
+    description: body.description,
+    transaction_id: body.transactionId ?? body.transaction_id ?? null,
+    due_date: body.dueDate ?? body.due_date ?? null,
+    status: body.status ?? "active",
+    updated_at: new Date().toISOString()
+  });
+}
+
+function mapTransactionInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  const date = body.date ?? body.transaction_date;
+  const description = body.description ?? body.description_clean;
+  const rawDescription = body.rawDescription ?? body.raw_description ?? body.description_raw ?? description;
+  const sourceAccountId = body.sourceAccountId ?? body.source_account_id;
+  const counterparty = body.counterparty ?? body.merchant_name ?? "";
+  const importBatchId = body.importBatchId ?? body.import_batch_id ?? null;
+
+  return compact({
+    date,
+    transaction_date: date,
+    description,
+    description_clean: description,
+    raw_description: rawDescription,
+    description_raw: rawDescription,
+    amount: body.amount,
+    source_account_id: sourceAccountId,
+    tags: body.tags ?? [],
+    counterparty,
+    merchant_name: counterparty,
+    reconciliation_id: body.reconciliationId ?? body.reconciliation_id ?? null,
+    import_batch_id: importBatchId,
+    batch_id: importBatchId,
+    import_status: body.importStatus ?? body.import_status ?? (isUpdate ? undefined : "manual"),
+    classification_status: body.classificationStatus ?? body.classification_status ?? (isUpdate ? undefined : "classified"),
+    ledger_status: body.ledgerStatus ?? body.ledger_status ?? (isUpdate ? undefined : "not_posted"),
+    source_metadata: body.sourceMetadata ?? body.source_metadata ?? {},
+    updated_at: new Date().toISOString()
+  });
+}
+
+async function replaceLedgerEntries(env: Env, tx: JsonRecord, categoryAccountId: string): Promise<void> {
+  const txId = tx.id;
+  const sourceAccountId = tx.source_account_id;
+  const date = tx.date ?? tx.transaction_date;
+  const amount = Number(tx.amount);
+
+  if (!txId || !sourceAccountId || !date || !categoryAccountId || isNaN(amount)) {
+    return;
   }
-  const data = await res.json() as any;
-  return json(data[0]);
+
+  const deleteRes = await supabaseFetch(env, `/finance_ledger_entries?transaction_id=eq.${filterValue(txId)}`, {
+    method: "DELETE"
+  });
+  await assertSupabaseOk(deleteRes, "Failed to replace existing ledger entries");
+
+  const absoluteAmount = Math.abs(amount);
+  const isOutflow = amount < 0;
+  const entries = [
+    {
+      id: `led-${txId}-src`,
+      transaction_id: txId,
+      account_id: sourceAccountId,
+      debit: isOutflow ? 0 : absoluteAmount,
+      credit: isOutflow ? absoluteAmount : 0,
+      date
+    },
+    {
+      id: `led-${txId}-cat`,
+      transaction_id: txId,
+      account_id: categoryAccountId,
+      debit: isOutflow ? absoluteAmount : 0,
+      credit: isOutflow ? 0 : absoluteAmount,
+      date
+    }
+  ];
+
+  const insertRes = await supabaseFetch(env, "/finance_ledger_entries", {
+    method: "POST",
+    body: JSON.stringify(entries)
+  });
+  await assertSupabaseOk(insertRes, "Failed to insert ledger entries");
+}
+
+function clampInteger(raw: string | null, fallback: number, min: number, max: number): number {
+  const parsed = raw === null ? NaN : Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
 }

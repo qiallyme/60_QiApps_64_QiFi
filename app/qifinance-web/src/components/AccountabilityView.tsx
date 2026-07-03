@@ -17,8 +17,38 @@ export default function AccountabilityView() {
     counterparties, 
     addObligation, 
     updateObligation, 
-    deleteObligation 
+    deleteObligation,
+    attachments,
+    addAttachment,
+    deleteAttachment
   } = useQiStore();
+
+  const [expandedOblId, setExpandedOblId] = useState<string | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<any>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleOblFileUpload = (oblId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          addAttachment(
+            null,
+            file.name,
+            file.type,
+            event.target.result as string,
+            'Linked invoice or receipt proof',
+            null,
+            null,
+            null,
+            oblId
+          );
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   // Filters
   const [activeFilter, setActiveFilter] = useState<string>('active'); // active, all, resolved, owed_to_me, i_owe, reimbursable, disputed
@@ -410,17 +440,20 @@ export default function AccountabilityView() {
                   </td>
                 </tr>
               ) : (
-                filteredObligations.map(ob => {
+                filteredObligations.flatMap(ob => {
                   const isOwed = ['owed_to_me', 'reimbursable', 'pending_reimbursement'].includes(ob.type);
                   const isResolved = ob.status === 'resolved';
                   const partnerName = cpMap.get(ob.counterpartyId) || 'Unknown Partner';
+                  const oblAtts = attachments.filter(a => a.obligationId === ob.id);
+                  const isExpanded = expandedOblId === ob.id;
 
-                  return (
+                  return [
                     <tr 
                       key={ob.id} 
-                      className={`hover:bg-zinc-800/20 transition-colors ${
+                      onClick={() => setExpandedOblId(isExpanded ? null : ob.id)}
+                      className={`hover:bg-zinc-800/20 transition-colors cursor-pointer select-none ${
                         isResolved ? 'opacity-50 line-through text-zinc-500' : ''
-                      }`}
+                      } ${isExpanded ? 'bg-zinc-800/10' : ''}`}
                     >
                       {/* Status */}
                       <td className="px-5 py-4">
@@ -442,7 +475,14 @@ export default function AccountabilityView() {
 
                       {/* Description */}
                       <td className="px-5 py-4 font-sans max-w-sm whitespace-normal text-zinc-300">
-                        {ob.description}
+                        <div className="flex items-center gap-2">
+                          <span>{ob.description}</span>
+                          {oblAtts.length > 0 && (
+                            <span className="bg-emerald-950/40 text-emerald-400 border border-emerald-900/30 text-[9px] px-1.5 py-0.2 rounded-md font-mono flex items-center gap-0.5 font-bold">
+                              📎 {oblAtts.length} File
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Due Date */}
@@ -462,7 +502,7 @@ export default function AccountabilityView() {
                       </td>
 
                       {/* Action */}
-                      <td className="px-5 py-4 text-right">
+                      <td className="px-5 py-4 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex gap-2 justify-end">
                           <button
                             onClick={() => handleToggleStatus(ob)}
@@ -485,14 +525,94 @@ export default function AccountabilityView() {
                           </button>
                         </div>
                       </td>
-                    </tr>
-                  );
+                    </tr>,
+                    isExpanded && (
+                      <tr key={`${ob.id}-expanded`} className="bg-zinc-950/40 border-b border-zinc-800/60 font-sans">
+                        <td colSpan={6} className="px-5 py-4 space-y-4">
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 block">Supporting Invoice & Receipts Evidence</span>
+                              <span className="text-xs text-zinc-400">Keep records attached to verify tax credits or corporate reimbursements.</span>
+                            </div>
+                            
+                            <label className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 hover:border-emerald-500/40 hover:text-emerald-400 px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all">
+                              📎 Upload Invoice File
+                              <input 
+                                type="file" 
+                                accept="image/*,application/pdf" 
+                                className="hidden" 
+                                onChange={e => handleOblFileUpload(ob.id, e)} 
+                              />
+                            </label>
+                          </div>
+
+                          {oblAtts.length === 0 ? (
+                            <div className="p-4 border border-dashed border-zinc-850 text-center rounded-xl bg-zinc-950/20">
+                              <span className="text-xs italic text-zinc-600 block">No billing statements, PDFs or receipts attached to this accountability obligation.</span>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                              {oblAtts.map(a => (
+                                <div key={a.id} className="bg-zinc-900/30 border border-zinc-850 p-2.5 rounded-xl flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <span className="text-zinc-200 font-semibold text-[11px] block truncate" title={a.fileName}>{a.fileName}</span>
+                                    <span className="text-[8px] text-zinc-500 font-mono block">Uploaded: {new Date(a.uploadedAt).toLocaleDateString()}</span>
+                                  </div>
+                                  <div className="flex gap-1">
+                                    <button 
+                                      onClick={() => setPreviewAttachment(a)}
+                                      className="text-emerald-400 hover:text-emerald-300 p-1 cursor-pointer"
+                                      title="Inspect File"
+                                    >
+                                      👁
+                                    </button>
+                                    <button 
+                                      onClick={() => deleteAttachment(a.id)}
+                                      className="text-zinc-500 hover:text-rose-400 p-1 cursor-pointer"
+                                      title="Delete"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  ];
                 })
               )}
             </tbody>
           </table>
         </div>
       </div>
+      {/* LIGHTBOX FILE PREVIEW OVERLAY */}
+      {previewAttachment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl max-w-lg w-full flex flex-col animate-scaleUp">
+            <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/40">
+              <div className="flex items-center gap-2 text-zinc-300">
+                <span className="font-bold text-sm truncate max-w-[280px] font-display">{previewAttachment.fileName}</span>
+              </div>
+              <button onClick={() => setPreviewAttachment(null)} className="text-zinc-500 hover:text-white bg-zinc-800 p-1.5 rounded-lg cursor-pointer">✕</button>
+            </div>
+
+            <div className="p-6 flex items-center justify-center bg-zinc-950 min-h-[300px]">
+              {previewAttachment.dataUrl.startsWith('data:image') ? (
+                <img src={previewAttachment.dataUrl} alt={previewAttachment.fileName} className="max-h-[360px] w-auto object-contain rounded-xl border border-zinc-800 shadow" />
+              ) : (
+                <div className="text-center space-y-3">
+                  <p className="text-zinc-400 text-xs">Spreadsheet or PDF binary format ({previewAttachment.fileType})</p>
+                  <a href={previewAttachment.dataUrl} download={previewAttachment.fileName} className="inline-block bg-zinc-800 text-zinc-200 border border-zinc-700 hover:border-zinc-650 px-4 py-2 rounded-xl text-xs font-bold transition-all">Download File</a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

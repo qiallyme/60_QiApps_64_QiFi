@@ -12,6 +12,10 @@ export interface Account {
   type: AccountType;
   description: string;
   isActive: boolean;
+  accountNumber?: string;
+  routingNumber?: string;
+  institution?: string;
+  parentAccountId?: string | null;
 }
 
 export interface ImportBatch {
@@ -71,6 +75,10 @@ export interface Attachment {
   id: string;
   transactionId?: string | null;
   statementId?: string | null;
+  accountId?: string | null;
+  counterpartyId?: string | null;
+  obligationId?: string | null;
+  scheduleId?: string | null;
   fileName: string;
   fileType: string;
   dataUrl: string; // Base64 image/file data

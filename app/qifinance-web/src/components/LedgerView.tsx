@@ -9,7 +9,8 @@ import { Transaction, Account, LedgerEntry } from '../types';
 import { 
   Search, Filter, CheckCircle, AlertCircle, FileText, 
   HelpCircle, ChevronDown, ChevronUp, Trash2, Calendar, 
-  ArrowUpRight, ArrowDownLeft, Tag, DollarSign, RefreshCw, Plus, X, Edit2
+  ArrowUpRight, ArrowDownLeft, Tag, DollarSign, RefreshCw, Plus, X, Edit2,
+  Download, Upload
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
@@ -24,13 +25,45 @@ export default function LedgerView() {
     getAccountBalance, 
     deleteTransaction,
     addManualTransaction,
-    updateTransaction
+    updateTransaction,
+    exportData,
+    importData
   } = useQiStore();
 
   const { pathname } = useLocation();
 
   // Editing transaction state
   const [editingTxId, setEditingTxId] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleBackup = () => {
+    const dataStr = exportData();
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `qifi_backup_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          const success = importData(event.target.result as string);
+          if (success) {
+            alert("Backup restored successfully!");
+          } else {
+            alert("Failed to restore backup format.");
+          }
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
 
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState('');
@@ -442,14 +475,36 @@ export default function LedgerView() {
             Real posted transactions with robust balanced credit/debit posting.
           </p>
         </div>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-lg hover:shadow-emerald-950/50 transition-all cursor-pointer border border-emerald-500/30 self-start sm:self-center"
-          id="btn-add-manual"
-        >
-          {showAddForm ? <X size={16} /> : <Plus size={16} />}
-          {showAddForm ? 'Close Editor' : 'Manual Ledger Post'}
-        </button>
+        
+        <div className="flex flex-wrap gap-2.5 items-center">
+          <button
+            onClick={handleBackup}
+            className="inline-flex items-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 px-3.5 py-2.5 rounded-xl text-xs font-semibold cursor-pointer transition-all"
+            title="Download full JSON database"
+          >
+            <Download size={13} /> Export Backup
+          </button>
+          
+          <label className="inline-flex items-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 px-3.5 py-2.5 rounded-xl text-xs font-semibold cursor-pointer transition-all">
+            <Upload size={13} /> Import Backup
+            <input 
+              type="file" 
+              ref={fileInputRef}
+              accept=".json" 
+              className="hidden" 
+              onChange={handleRestore} 
+            />
+          </label>
+
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-lg hover:shadow-emerald-950/50 transition-all cursor-pointer border border-emerald-500/30 self-start sm:self-center"
+            id="btn-add-manual"
+          >
+            {showAddForm ? <X size={16} /> : <Plus size={16} />}
+            {showAddForm ? 'Close Editor' : 'Manual Ledger Post'}
+          </button>
+        </div>
       </div>
 
       {/* MANUAL TRANSACTION POSTING FORM */}

@@ -5,11 +5,12 @@
 
 import React, { useState, useMemo } from 'react';
 import { useQiStore } from '../store';
-import { Counterparty, AccountabilityObligation, Transaction } from '../types';
+import { Counterparty, AccountabilityObligation, Attachment, Transaction } from '../types';
 import { 
   Users, User, Building2, Search, PlusCircle, ArrowLeft, 
   ArrowUpRight, ArrowDownLeft, Tag, FileText, Calendar, 
-  Trash2, Edit, AlertCircle, CheckCircle, Plus, Sparkles, Receipt
+  Trash2, Edit, AlertCircle, CheckCircle, Plus, Sparkles,
+  Upload, Eye, X, Check
 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 
@@ -26,10 +27,15 @@ export default function CounterpartyView() {
     deleteCounterparty,
     addObligation,
     updateObligation,
-    deleteObligation
+    deleteObligation,
+    attachments,
+    addAttachment,
+    deleteAttachment
   } = useQiStore();
 
   // State
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddForm, setShowAddForm] = useState(() => {
     return !!localStorage.getItem('qifi_draft_partner');
@@ -345,6 +351,30 @@ export default function CounterpartyView() {
         if (o.type === 'i_owe') return sum - o.amount;
         return sum;
       }, 0);
+
+    const cpAttachments = attachments.filter(a => a.counterpartyId === activeCP.id);
+
+    const handleCpFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            addAttachment(
+              null,
+              file.name,
+              file.type,
+              event.target.result as string,
+              'Agreement details with partner ' + activeCP.name,
+              null,
+              null,
+              activeCP.id
+            );
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    };
 
     return (
       <div className="space-y-6">
@@ -743,6 +773,89 @@ export default function CounterpartyView() {
             </div>
           </div>
         </div>
+
+        {/* CONTRACT & DOCUMENT EVIDENCE */}
+        <div className="bg-zinc-900/30 border border-zinc-800/80 p-5 rounded-2xl space-y-4 backdrop-blur-sm">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-100 flex items-center gap-1.5 font-display">
+                <FileText size={15} className="text-emerald-400" />
+                Contract & Compliance Documents ({cpAttachments.length})
+              </h3>
+              <p className="text-xs text-zinc-500">Verify signatures, tax certificates, and mutual business agreements</p>
+            </div>
+            
+            <label className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 hover:border-emerald-500/40 text-zinc-400 hover:text-emerald-400 px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all">
+              <Upload size={12} /> Upload Agreement File
+              <input 
+                type="file" 
+                ref={fileInputRef}
+                accept="image/*,application/pdf" 
+                className="hidden" 
+                onChange={handleCpFileUpload} 
+              />
+            </label>
+          </div>
+
+          {cpAttachments.length === 0 ? (
+            <div className="p-8 border border-dashed border-zinc-800/80 bg-zinc-950/20 text-center rounded-xl">
+              <span className="text-zinc-500 text-xs italic block">No corporate agreements, agreements, or W-9 compliance files attached yet.</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {cpAttachments.map(a => (
+                <div key={a.id} className="bg-zinc-950/40 border border-zinc-850 p-3.5 rounded-xl flex flex-col justify-between space-y-2">
+                  <div className="space-y-1">
+                    <span className="text-zinc-300 font-semibold text-xs block truncate" title={a.fileName}>{a.fileName}</span>
+                    <span className="text-[9px] text-zinc-500 block">Uploaded: {new Date(a.uploadedAt).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => setPreviewAttachment(a)}
+                      className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-emerald-400 text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-1 flex-1 font-semibold cursor-pointer transition-all"
+                    >
+                      <Eye size={12} /> View File
+                    </button>
+                    <button 
+                      onClick={() => deleteAttachment(a.id)}
+                      className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-rose-455 text-xs p-1.5 rounded-lg cursor-pointer transition-all"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* LIGHTBOX PREVIEW OVERLAY */}
+        {previewAttachment && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-md animate-fadeIn">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl max-w-lg w-full flex flex-col animate-scaleUp">
+              <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/40">
+                <div className="flex items-center gap-2">
+                  <FileText className="text-emerald-400" size={18} />
+                  <h3 className="font-bold text-white text-sm truncate max-w-[280px] font-display">{previewAttachment.fileName}</h3>
+                </div>
+                <button onClick={() => setPreviewAttachment(null)} className="text-zinc-500 hover:text-white bg-zinc-800 p-1.5 rounded-lg cursor-pointer"><X size={16} /></button>
+              </div>
+
+              <div className="p-6 flex items-center justify-center bg-zinc-950 min-h-[300px]">
+                {previewAttachment.dataUrl.startsWith('data:image') ? (
+                  <img src={previewAttachment.dataUrl} alt={previewAttachment.fileName} className="max-h-[360px] w-auto object-contain rounded-xl border border-zinc-800 shadow" />
+                ) : (
+                  <div className="text-center space-y-3">
+                    <FileText className="mx-auto text-zinc-600 animate-pulse" size={60} />
+                    <p className="text-zinc-400 text-xs">Spreadsheet or PDF binary format ({previewAttachment.fileType})</p>
+                    <a href={previewAttachment.dataUrl} download={previewAttachment.fileName} className="inline-block bg-zinc-800 text-zinc-200 border border-zinc-700 hover:border-zinc-650 px-4 py-2 rounded-xl text-xs font-bold transition-all">Download File</a>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     );
   }

@@ -19,11 +19,12 @@ import CounterpartyView from './components/CounterpartyView';
 import AccountabilityView from './components/AccountabilityView';
 import ReportsView from './components/ReportsView';
 import SettingsView from './components/SettingsView';
+import CategoryRulesView from './components/CategoryRulesView';
 
 import { 
   TrendingUp, Inbox, Sparkles, Layers, BookOpen,
   Users, FileText, ShieldCheck, BarChart2, ShieldAlert,
-  Settings as SettingsIcon, Menu, X, CheckSquare
+  Settings as SettingsIcon, Menu, X, CheckSquare, Sliders
 } from 'lucide-react';
 
 function SidebarAndNav() {
@@ -107,6 +108,13 @@ function SidebarAndNav() {
               <div className="flex items-center gap-2.5">
                 <Sparkles size={16} className={navIconClass('/imports')} />
                 <span>Ingest Bank Data</span>
+              </div>
+            </Link>
+
+            <Link to="/rules" className={linkClass('/rules')}>
+              <div className="flex items-center gap-2.5">
+                <Sliders size={16} className={navIconClass('/rules')} />
+                <span>Category Rules</span>
               </div>
             </Link>
 
@@ -209,6 +217,7 @@ function SidebarAndNav() {
               <Route path="/transactions/new" element={<LedgerView />} />
               <Route path="/imports" element={<ImportView />} />
               <Route path="/imports/review" element={<ReviewQueueView />} />
+              <Route path="/rules" element={<CategoryRulesView />} />
               <Route path="/counterparties" element={<CounterpartyView />} />
               <Route path="/counterparties/:id" element={<CounterpartyView />} />
               <Route path="/accountability" element={<AccountabilityView />} />
