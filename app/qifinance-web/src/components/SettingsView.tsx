@@ -228,7 +228,7 @@ export default function SettingsView() {
               QiFi does none of that. 
             </p>
             <p>
-              Every transaction you import, receipt you attach, and category you define is saved locally inside your browser's persistent sandbox storage (<code className="bg-zinc-950 text-[10px] font-mono px-1 rounded">localStorage</code>). 
+              Every transaction you import, receipt you attach, and category you define is saved through the QiFi API into your Supabase finance tables, with browser storage kept as a local fallback and draft cache.
             </p>
             <div className="p-3.5 bg-zinc-950/40 rounded-xl border border-zinc-800/60 flex gap-2.5 items-start mt-2">
               <Info size={14} className="text-emerald-400 shrink-0 mt-0.5" />

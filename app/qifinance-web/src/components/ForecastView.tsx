@@ -124,11 +124,11 @@ export default function ForecastView() {
     }
   };
 
-  const handleQuickTxSubmit = (e: React.FormEvent) => {
+  const handleQuickTxSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!qTxDesc || !qTxAmount || isNaN(Number(qTxAmount))) return;
-    const txId = `tx-${Date.now()}`;
-    addManualTransaction({
+    const txId = crypto.randomUUID();
+    const createdTx = await addManualTransaction({
       id: txId,
       date: qTxDate,
       description: qTxDesc,
@@ -140,7 +140,7 @@ export default function ForecastView() {
     } as any, qTxCatAcc);
 
     if (qTxFileDataUrl) {
-      addAttachment(txId, qTxFileName, qTxFileType, qTxFileDataUrl, 'Uploaded via command center uploader');
+      addAttachment(createdTx?.id ?? txId, qTxFileName, qTxFileType, qTxFileDataUrl, 'Uploaded via command center uploader');
     }
     
     setQTxDesc('');

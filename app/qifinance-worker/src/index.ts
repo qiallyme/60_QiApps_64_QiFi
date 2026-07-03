@@ -204,12 +204,13 @@ function json(data: any, status = 200): Response {
 
 async function handleSupabaseError(res: Response, route: string): Promise<Response> {
   const errorText = await res.text();
+  const status = res.status >= 400 && res.status < 500 ? res.status : 500;
   return json({
     error: "Supabase request failed",
     status: res.status,
     details: errorText,
     route
-  }, res.status === 404 ? 404 : 500);
+  }, status);
 }
 
 async function assertSupabaseOk(res: Response, message: string): Promise<void> {
@@ -935,6 +936,7 @@ function mapTransactionInput(body: JsonRecord, isUpdate = false): JsonRecord {
   const importBatchId = body.importBatchId ?? body.import_batch_id ?? null;
 
   return compact({
+    id: isUpdate ? undefined : body.id,
     date,
     transaction_date: date,
     description,

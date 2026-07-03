@@ -55,7 +55,7 @@ interface QiContextType {
   bulkApproveRows: (approvals: { rowId: string, data: { date: string; description: string; counterparty: string; accountId: string; tags: string[]; amount: number } }[]) => void;
   bulkIgnoreRows: (rowIds: string[]) => void;
   
-  addManualTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'> & { id?: string }, categoryAccountId: string) => void;
+  addManualTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'> & { id?: string }, categoryAccountId: string) => Promise<Transaction | null>;
   updateTransaction: (txId: string, updatedTx: Partial<Omit<Transaction, 'id' | 'createdAt'>>, categoryAccountId?: string) => void;
   deleteTransaction: (id: string) => void;
   
@@ -101,6 +101,8 @@ interface QiContextType {
 }
 
 const QiContext = createContext<QiContextType | undefined>(undefined);
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function mapApiTransaction(tx: any): Transaction {
   return {
@@ -1062,11 +1064,16 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   // Manual Transaction Generation
-  const addManualTransaction = async (tx: Omit<Transaction, 'id' | 'createdAt'>, categoryAccountId: string) => {
+  const addManualTransaction = async (
+    tx: Omit<Transaction, 'id' | 'createdAt'> & { id?: string },
+    categoryAccountId: string
+  ): Promise<Transaction | null> => {
     try {
-      await qifinanceApi.createTransaction({
+      const apiTx = await qifinanceApi.createTransaction({
+        id: tx.id && UUID_RE.test(tx.id) ? tx.id : undefined,
         date: tx.date,
         description: tx.description,
+        rawDescription: tx.rawDescription,
         amount: tx.amount,
         sourceAccountId: tx.sourceAccountId,
         tags: tx.tags,
@@ -1076,7 +1083,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         categoryAccountId
       } as any);
       await refreshApiState();
-      return;
+      return mapApiTransaction(apiTx);
     } catch (err) {
       console.warn("Failed to create transaction on API, using local fallback:", err);
     }
@@ -1125,6 +1132,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     const nextLedgers = [...ledgerEntries, ...newLedgers];
 
     saveAll(accounts, nextTxs, nextLedgers, importBatches, rawRows, rules, attachments, statements, schedules);
+    return newTx;
   };
 
   const deleteTransaction = async (id: string) => {

@@ -355,6 +355,21 @@ ALTER TABLE public.finance_recurring_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.finance_counterparties ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.finance_obligations ENABLE ROW LEVEL SECURITY;
 
+REVOKE ALL ON TABLE
+    public.finance_accounts,
+    public.finance_categories,
+    public.finance_import_batches,
+    public.finance_import_raw_rows,
+    public.finance_master_transactions,
+    public.finance_transaction_rules,
+    public.finance_ledger_entries,
+    public.finance_attachments,
+    public.finance_statements,
+    public.finance_recurring_schedules,
+    public.finance_counterparties,
+    public.finance_obligations
+FROM anon, authenticated;
+
 GRANT USAGE ON SCHEMA public TO service_role;
 GRANT ALL ON TABLE
     public.finance_accounts,
