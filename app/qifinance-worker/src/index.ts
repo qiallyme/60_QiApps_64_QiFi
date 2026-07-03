@@ -6,6 +6,7 @@
 export interface Env {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
+  QIFI_API_TOKEN: string;
 }
 
 type JsonRecord = Record<string, any>;
@@ -82,6 +83,8 @@ export default {
           service: "qifinance-api",
           time: new Date().toISOString()
         });
+      } else if (!(await isAuthorized(request, env))) {
+        response = unauthorized(env);
       } else if (url.pathname === "/debug/env" && request.method === "GET") {
         let host: string | null = null;
         try {
@@ -137,6 +140,44 @@ function injectCors(request: Request, response: Response): Response {
     statusText: response.statusText,
     headers
   });
+}
+
+function unauthorized(env: Env): Response {
+  const status = env.QIFI_API_TOKEN ? 401 : 503;
+  return json({
+    error: env.QIFI_API_TOKEN
+      ? "Unauthorized"
+      : "QIFI_API_TOKEN secret must be configured in the worker."
+  }, status);
+}
+
+async function isAuthorized(request: Request, env: Env): Promise<boolean> {
+  if (!env.QIFI_API_TOKEN) return false;
+
+  const authHeader = request.headers.get("Authorization") || "";
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  const providedToken = match?.[1]?.trim() || "";
+  if (!providedToken) return false;
+
+  return await timingSafeEqual(providedToken, env.QIFI_API_TOKEN);
+}
+
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const [aHash, bHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(a)),
+    crypto.subtle.digest("SHA-256", encoder.encode(b))
+  ]);
+
+  const aBytes = new Uint8Array(aHash);
+  const bBytes = new Uint8Array(bHash);
+  let diff = a.length ^ b.length;
+
+  for (let i = 0; i < aBytes.length; i++) {
+    diff |= aBytes[i] ^ bBytes[i];
+  }
+
+  return diff === 0;
 }
 
 async function router(request: Request, env: Env): Promise<Response> {
