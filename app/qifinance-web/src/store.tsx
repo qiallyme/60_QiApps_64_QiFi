@@ -357,9 +357,32 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     const loadApiData = async () => {
       try {
         await qifinanceApi.checkHealth();
-        const apiState = await qifinanceApi.getState();
-        if (!apiState.accounts || apiState.accounts.length === 0) throw new Error("No accounts found in database");
-        applyApiState(apiState);
+        try {
+          const apiState = await qifinanceApi.getState();
+          if (!apiState.accounts || apiState.accounts.length === 0) throw new Error("No accounts found in database");
+          applyApiState(apiState);
+        } catch (stateErr) {
+          console.warn("Full finance state endpoint unavailable, loading core API data:", stateErr);
+          const [apiAccounts, apiTransactions] = await Promise.all([
+            qifinanceApi.getAccounts(),
+            qifinanceApi.getTransactions(),
+          ]);
+          if (!apiAccounts || apiAccounts.length === 0) throw new Error("No accounts found in database");
+
+          const mappedTxs = apiTransactions.map(mapApiTransaction);
+          setAccounts(apiAccounts.map(mapApiAccount));
+          setTransactions(mappedTxs);
+          setLedgerEntries(buildLedgerEntriesFromTransactions(mappedTxs));
+
+          setImportBatches(localStorage.getItem('qi_batches') ? JSON.parse(localStorage.getItem('qi_batches') || '[]') : []);
+          setRawRows(localStorage.getItem('qi_raw_rows') ? JSON.parse(localStorage.getItem('qi_raw_rows') || '[]') : []);
+          setRules(localStorage.getItem('qi_rules') ? JSON.parse(localStorage.getItem('qi_rules') || '[]') : DEFAULT_RULES);
+          setAttachments(localStorage.getItem('qi_attachments') ? JSON.parse(localStorage.getItem('qi_attachments') || '[]') : []);
+          setStatements(localStorage.getItem('qi_statements') ? JSON.parse(localStorage.getItem('qi_statements') || '[]') : []);
+          setSchedules(localStorage.getItem('qi_schedules') ? JSON.parse(localStorage.getItem('qi_schedules') || '[]') : []);
+          setCounterparties(localStorage.getItem('qi_counterparties') ? JSON.parse(localStorage.getItem('qi_counterparties') || '[]') : []);
+          setObligations(localStorage.getItem('qi_obligations') ? JSON.parse(localStorage.getItem('qi_obligations') || '[]') : []);
+        }
       } catch (err) {
         console.warn("Could not load from API worker, falling back to localStorage:", err);
         const savedAccounts = localStorage.getItem('qi_accounts');

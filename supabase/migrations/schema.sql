@@ -201,6 +201,9 @@ CREATE TABLE IF NOT EXISTS public.finance_ledger_entries (
 CREATE INDEX IF NOT EXISTS idx_finance_ledger_entries_transaction_id
     ON public.finance_ledger_entries(transaction_id);
 
+CREATE INDEX IF NOT EXISTS idx_finance_ledger_entries_account_date
+    ON public.finance_ledger_entries(account_id, date DESC);
+
 -- ---------------------------------------------------------------------------
 -- App persistence domains used by the current UI
 -- ---------------------------------------------------------------------------
@@ -222,6 +225,9 @@ CREATE TABLE IF NOT EXISTS public.finance_attachments (
 
 CREATE INDEX IF NOT EXISTS idx_finance_attachments_transaction_id
     ON public.finance_attachments(transaction_id);
+
+CREATE INDEX IF NOT EXISTS idx_finance_attachments_statement_id
+    ON public.finance_attachments(statement_id);
 
 CREATE TABLE IF NOT EXISTS public.finance_statements (
     id VARCHAR(140) PRIMARY KEY,
@@ -250,6 +256,12 @@ CREATE TABLE IF NOT EXISTS public.finance_recurring_schedules (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_finance_recurring_schedules_next_due_date
+    ON public.finance_recurring_schedules(next_due_date);
+
+CREATE INDEX IF NOT EXISTS idx_finance_recurring_schedules_source_account_id
+    ON public.finance_recurring_schedules(source_account_id);
+
 CREATE TABLE IF NOT EXISTS public.finance_counterparties (
     id VARCHAR(140) PRIMARY KEY,
     workspace_id VARCHAR(140) NOT NULL DEFAULT 'default',
@@ -275,6 +287,24 @@ CREATE TABLE IF NOT EXISTS public.finance_obligations (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_finance_obligations_counterparty_id
+    ON public.finance_obligations(counterparty_id);
+
+CREATE INDEX IF NOT EXISTS idx_finance_obligations_status
+    ON public.finance_obligations(status);
+
+CREATE INDEX IF NOT EXISTS idx_finance_import_raw_rows_import_batch_id
+    ON public.finance_import_raw_rows(import_batch_id);
+
+CREATE INDEX IF NOT EXISTS idx_finance_master_transactions_date
+    ON public.finance_master_transactions(date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_finance_master_transactions_source_account_id
+    ON public.finance_master_transactions(source_account_id);
+
+CREATE INDEX IF NOT EXISTS idx_finance_master_transactions_import_batch_id
+    ON public.finance_master_transactions(import_batch_id);
 
 -- ---------------------------------------------------------------------------
 -- Seed default data
