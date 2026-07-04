@@ -320,7 +320,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         </div>
 
         <label className="block space-y-2">
-          <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Access key</span>
+          <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Passphrase</span>
           <input
             autoFocus
             type="password"
