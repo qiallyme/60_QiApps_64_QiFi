@@ -5,6 +5,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useQiStore } from '../store';
+import SearchableAccountSelect from './SearchableAccountSelect';
 import { Statement, Transaction, Attachment } from '../types';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
 import { 
@@ -748,17 +749,12 @@ export default function ReconciliationView() {
                   {/* Offset/Category Account */}
                   <div>
                     <label className="block text-[10px] text-zinc-400 font-semibold mb-1">Offset (Category/Fee) Account</label>
-                    <select
+                    <SearchableAccountSelect
                       value={quickCategory}
-                      onChange={e => setQuickCategory(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5 text-zinc-200 focus:outline-none focus:border-zinc-750"
-                    >
-                      {accounts.map(a => (
-                        <option key={a.id} value={a.id}>
-                          {a.code} - {a.name} ({a.type})
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setQuickCategory}
+                      accounts={accounts}
+                      className="w-full mt-1"
+                    />
                   </div>
                 </div>
 

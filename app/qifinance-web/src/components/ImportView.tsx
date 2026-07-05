@@ -5,6 +5,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useQiStore } from '../store';
+import SearchableAccountSelect from './SearchableAccountSelect';
 import { 
   Upload, Tag, Clipboard, ListFilter, Trash2, CheckCircle, 
   Settings, HelpCircle, FileText, ArrowRight, Plus, Eye,
@@ -147,14 +148,15 @@ export default function ImportView() {
   // Sample templates to load for quick user testing
   const loadChaseCCSample = () => {
     setFileName('Chase_CC_Sapphire_June.csv');
-    setRawText(
+    const csvText = 
       `Transaction Date,Post Date,Description,Category,Type,Amount,Memo\n` +
       `06/25/2026,06/26/2026,GITHUB SPONSOR GITHUB.CO,Shopping,Sale,-10.00,\n` +
       `06/26/2026,06/26/2026,WHOLEFOODS 1032 MAIN ST,Groceries,Sale,-65.40,\n` +
       `06/27/2026,06/27/2026,ATM CASH OUT WALMART GAS,Gas,Sale,-150.00,\n` +
       `06/28/2026,06/28/2026,FIGMA DESIGN SUBS SAAS,Business Services,Sale,-45.00,\n` +
-      `06/29/2026,06/29/2026,UBER RIDE TRP CHARGE 99,Travel,Sale,-18.25,`
-    );
+      `06/29/2026,06/29/2026,UBER RIDE TRP CHARGE 99,Travel,Sale,-18.25,`;
+    setRawText(csvText);
+    handleParseData(csvText);
     setTargetAccountId('liabilities-chasecc');
     setAmountMode('single');
     setColumnMappings({
@@ -169,12 +171,13 @@ export default function ImportView() {
 
   const loadVenmoSample = () => {
     setFileName('Venmo_Statement_June.csv');
-    setRawText(
+    const csvText = 
       `Date,ID,Note,Sender,Recipient,Amount\n` +
       `2026-06-21,5810,mom transfer allowance,Me,Mom,-500.00\n` +
       `2026-06-22,5811,consulting invoice 102,Client,Me,4500.00\n` +
-      `2026-06-23,5812,dinner with team,Me,Bistro,-34.50`
-    );
+      `2026-06-23,5812,dinner with team,Me,Bistro,-34.50`;
+    setRawText(csvText);
+    handleParseData(csvText);
     setTargetAccountId('assets-checking');
     setAmountMode('single');
     setColumnMappings({
@@ -626,17 +629,14 @@ export default function ImportView() {
 
         {/* ACCOUNT DESTINATION & QUICK DEMO TEMPLATES */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-950 p-4 rounded-xl border border-zinc-800/80">
-          <div className="space-y-1 w-full sm:max-w-xs">
+          <div className="space-y-1 w-full sm:max-w-xs text-zinc-350">
             <span className="text-[10px] uppercase font-bold text-zinc-400 font-mono tracking-wider">Target Destination Account</span>
-            <select
+            <SearchableAccountSelect
               value={targetAccountId}
-              onChange={e => setTargetAccountId(e.target.value)}
-              className="block w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 font-semibold focus:outline-none cursor-pointer"
-            >
-              {accounts.filter(a => ['asset', 'liability'].includes(a.type)).map(a => (
-                <option key={a.id} value={a.id}>{a.name} ({a.type.toUpperCase()})</option>
-              ))}
-            </select>
+              onChange={setTargetAccountId}
+              accounts={accounts.filter(a => ['asset', 'liability'].includes(a.type))}
+              className="block w-full mt-1.5"
+            />
           </div>
 
           <div className="space-y-1 text-right">
@@ -1157,15 +1157,12 @@ export default function ImportView() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-[10px] text-zinc-400 font-bold mb-1 font-mono">Suggested category:</label>
-                <select
+                <SearchableAccountSelect
                   value={newRuleCat}
-                  onChange={e => setNewRuleCat(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-2 text-xs text-zinc-200 focus:outline-none cursor-pointer"
-                >
-                  {accounts.map(a => (
-                    <option key={a.id} value={a.id}>({a.code}) {a.name}</option>
-                  ))}
-                </select>
+                  onChange={setNewRuleCat}
+                  accounts={accounts}
+                  className="w-full"
+                />
               </div>
               <div>
                 <label className="block text-[10px] text-zinc-400 font-bold mb-1 font-mono">Tags (Comma-separated):</label>

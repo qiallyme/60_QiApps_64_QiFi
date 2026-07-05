@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQiStore } from '../store';
+import SearchableAccountSelect from './SearchableAccountSelect';
 import { RawImportedRow, Account } from '../types';
 import { 
   Check, X, ChevronRight, HelpCircle, AlertTriangle, 
@@ -363,17 +364,14 @@ export default function ReviewQueueView() {
               {/* Bulk Form and Actions */}
               <div className="flex flex-wrap items-center gap-3">
                 {/* Bulk Category dropdown */}
-                <select
+                <SearchableAccountSelect
                   value={bulkAccountId}
-                  onChange={e => setBulkAccountId(e.target.value)}
+                  onChange={setBulkAccountId}
+                  accounts={accounts}
+                  placeholder="-- Bulk Category --"
                   disabled={selectedIds.length === 0}
-                  className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/50 cursor-pointer min-w-[140px]"
-                >
-                  <option value="">-- Bulk Category --</option>
-                  {accounts.map(a => (
-                    <option key={a.id} value={a.id}>({a.code}) {a.name}</option>
-                  ))}
-                </select>
+                  className="min-w-[160px]"
+                />
 
                 {/* Bulk Merchant input */}
                 <input
@@ -518,17 +516,12 @@ export default function ReviewQueueView() {
 
                         {/* Account Mapping Cell */}
                         <td className="py-3 px-3">
-                          <select
+                          <SearchableAccountSelect
                             value={row.suggestedAccountId || 'suspense-uncategorized'}
-                            onChange={e => updateRawRow(row.id, { suggestedAccountId: e.target.value })}
-                            className="w-full bg-zinc-950 border border-zinc-850 hover:border-zinc-700 focus:border-emerald-500/50 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none transition-all cursor-pointer"
-                          >
-                            {accounts.map(a => (
-                              <option key={a.id} value={a.id}>
-                                ({a.code}) {a.name} — {a.type.toUpperCase()}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={val => updateRawRow(row.id, { suggestedAccountId: val })}
+                            accounts={accounts}
+                            className="w-full"
+                          />
                         </td>
 
                         {/* Tags Cell */}
@@ -674,17 +667,12 @@ export default function ReviewQueueView() {
                 </label>
                 <span className="text-[10px] text-zinc-500">Select an account or category</span>
               </div>
-              <select
+              <SearchableAccountSelect
                 value={editAccountId}
-                onChange={e => setEditAccountId(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-zinc-700 cursor-pointer"
-              >
-                {accounts.map(a => (
-                  <option key={a.id} value={a.id}>
-                    ({a.code}) {a.name} — {a.type.toUpperCase()}
-                  </option>
-                ))}
-              </select>
+                onChange={setEditAccountId}
+                accounts={accounts}
+                className="w-full mt-1.5"
+              />
             </div>
 
             {/* Tags Input */}
