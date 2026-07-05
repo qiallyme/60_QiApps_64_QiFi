@@ -411,8 +411,11 @@ async function handleGetState(env: Env): Promise<Response> {
 }
 
 async function handleAssistant(request: Request, env: Env): Promise<Response> {
-  if (!env.OPENAI_API_KEY) {
-    return json({ error: "OPENAI_API_KEY secret must be configured in the worker." }, 503);
+  const userApiKey = request.headers.get("x-openai-api-key") || "";
+  const apiKey = userApiKey || env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    return json({ error: "OPENAI_API_KEY secret must be configured in the worker, or set in settings." }, 503);
   }
 
   const body = await request.json().catch(() => ({})) as JsonRecord;
@@ -420,7 +423,7 @@ async function handleAssistant(request: Request, env: Env): Promise<Response> {
   if (!message) return json({ error: "Assistant message is required." }, 400);
 
   const context = await buildAssistantContext(env);
-  const plan = await planAssistantActions(env, message, context);
+  const plan = await planAssistantActions(env, message, context, apiKey);
   const warnings = toStringArray(plan.warnings);
   const plannedActions = Array.isArray(plan.actions) ? plan.actions.slice(0, 10) : [];
   const results: AssistantActionResult[] = [];
@@ -499,11 +502,11 @@ async function buildAssistantContext(env: Env): Promise<AssistantContext> {
   };
 }
 
-async function planAssistantActions(env: Env, message: string, context: AssistantContext): Promise<JsonRecord> {
+async function planAssistantActions(env: Env, message: string, context: AssistantContext, apiKey: string): Promise<JsonRecord> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+      "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
@@ -1502,9 +1505,46 @@ async function handleImportCommit(request: Request, env: Env): Promise<Response>
     if (!txRes.ok) return await handleSupabaseError(txRes, "/api/finance/import/commit");
     txData = await txRes.json() as any[];
 
+    const ledgerEntriesToInsert: any[] = [];
     for (let i = 0; i < txData.length; i++) {
+      const tx = txData[i];
       const row = nonDuplicateRows[i];
-      await replaceLedgerEntries(env, txData[i], row.suggestedAccountId || "suspense-uncategorized");
+      const txId = tx.id;
+      const date = tx.date ?? tx.transaction_date;
+      const amount = Number(tx.amount);
+      const categoryAccountId = row.suggestedAccountId || "suspense-uncategorized";
+
+      if (!txId || !sourceAccountId || !date || !categoryAccountId || isNaN(amount)) {
+        continue;
+      }
+
+      const absoluteAmount = Math.abs(amount);
+      const isOutflow = amount < 0;
+
+      ledgerEntriesToInsert.push({
+        id: `led-${txId}-src`,
+        transaction_id: txId,
+        account_id: sourceAccountId,
+        debit: isOutflow ? 0 : absoluteAmount,
+        credit: isOutflow ? absoluteAmount : 0,
+        date
+      });
+      ledgerEntriesToInsert.push({
+        id: `led-${txId}-cat`,
+        transaction_id: txId,
+        account_id: categoryAccountId,
+        debit: isOutflow ? absoluteAmount : 0,
+        credit: isOutflow ? 0 : absoluteAmount,
+        date
+      });
+    }
+
+    if (ledgerEntriesToInsert.length > 0) {
+      const ledRes = await supabaseFetch(env, "/finance_ledger_entries", {
+        method: "POST",
+        body: JSON.stringify(ledgerEntriesToInsert)
+      });
+      if (!ledRes.ok) return await handleSupabaseError(ledRes, "/api/finance/import/commit");
     }
   }
 

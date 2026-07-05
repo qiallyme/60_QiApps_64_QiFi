@@ -344,14 +344,16 @@ async function handleGetState(env) {
 }
 __name(handleGetState, "handleGetState");
 async function handleAssistant(request, env) {
-  if (!env.OPENAI_API_KEY) {
-    return json({ error: "OPENAI_API_KEY secret must be configured in the worker." }, 503);
+  const userApiKey = request.headers.get("x-openai-api-key") || "";
+  const apiKey = userApiKey || env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return json({ error: "OPENAI_API_KEY secret must be configured in the worker, or set in settings." }, 503);
   }
   const body = await request.json().catch(() => ({}));
   const message = normalizeText(body.message ?? body.prompt);
   if (!message) return json({ error: "Assistant message is required." }, 400);
   const context = await buildAssistantContext(env);
-  const plan = await planAssistantActions(env, message, context);
+  const plan = await planAssistantActions(env, message, context, apiKey);
   const warnings = toStringArray(plan.warnings);
   const plannedActions = Array.isArray(plan.actions) ? plan.actions.slice(0, 10) : [];
   const results = [];
@@ -420,11 +422,11 @@ async function buildAssistantContext(env) {
   };
 }
 __name(buildAssistantContext, "buildAssistantContext");
-async function planAssistantActions(env, message, context) {
+async function planAssistantActions(env, message, context, apiKey) {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+      "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
@@ -1323,9 +1325,42 @@ async function handleImportCommit(request, env) {
     });
     if (!txRes.ok) return await handleSupabaseError(txRes, "/api/finance/import/commit");
     txData = await txRes.json();
+    const ledgerEntriesToInsert = [];
     for (let i = 0; i < txData.length; i++) {
+      const tx = txData[i];
       const row = nonDuplicateRows[i];
-      await replaceLedgerEntries(env, txData[i], row.suggestedAccountId || "suspense-uncategorized");
+      const txId = tx.id;
+      const date = tx.date ?? tx.transaction_date;
+      const amount = Number(tx.amount);
+      const categoryAccountId = row.suggestedAccountId || "suspense-uncategorized";
+      if (!txId || !sourceAccountId || !date || !categoryAccountId || isNaN(amount)) {
+        continue;
+      }
+      const absoluteAmount = Math.abs(amount);
+      const isOutflow = amount < 0;
+      ledgerEntriesToInsert.push({
+        id: `led-${txId}-src`,
+        transaction_id: txId,
+        account_id: sourceAccountId,
+        debit: isOutflow ? 0 : absoluteAmount,
+        credit: isOutflow ? absoluteAmount : 0,
+        date
+      });
+      ledgerEntriesToInsert.push({
+        id: `led-${txId}-cat`,
+        transaction_id: txId,
+        account_id: categoryAccountId,
+        debit: isOutflow ? absoluteAmount : 0,
+        credit: isOutflow ? 0 : absoluteAmount,
+        date
+      });
+    }
+    if (ledgerEntriesToInsert.length > 0) {
+      const ledRes = await supabaseFetch(env, "/finance_ledger_entries", {
+        method: "POST",
+        body: JSON.stringify(ledgerEntriesToInsert)
+      });
+      if (!ledRes.ok) return await handleSupabaseError(ledRes, "/api/finance/import/commit");
     }
   }
   return json({
@@ -1558,7 +1593,7 @@ var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx)
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError;
 
-// .wrangler/tmp/bundle-ZVHkIX/middleware-insertion-facade.js
+// .wrangler/tmp/bundle-HAIvFl/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
@@ -1590,7 +1625,7 @@ function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// .wrangler/tmp/bundle-ZVHkIX/middleware-loader.entry.ts
+// .wrangler/tmp/bundle-HAIvFl/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class ___Facade_ScheduledController__ {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;

@@ -11,8 +11,7 @@
   "secrets": {
     "required": [
       "SUPABASE_SERVICE_ROLE_KEY",
-      "QIFI_API_TOKEN",
-      "OPENAI_API_KEY"
+      "QIFI_API_TOKEN"
     ]
   },
   "vars": {

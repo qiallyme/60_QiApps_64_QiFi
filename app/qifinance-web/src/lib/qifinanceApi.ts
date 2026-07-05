@@ -53,10 +53,15 @@ async function requestJson<T>(path: string, fallback: string, init?: RequestInit
   return res.json();
 }
 
-async function postJson<T>(path: string, body: unknown, fallback: string): Promise<T> {
+async function postJson<T>(path: string, body: unknown, fallback: string, init?: RequestInit): Promise<T> {
+  const headers = authHeaders(init);
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
   return requestJson<T>(path, fallback, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    ...init,
+    headers,
     body: JSON.stringify(body),
   });
 }
@@ -200,7 +205,12 @@ export const qifinanceApi = {
   },
 
   async askAssistant(message: string): Promise<AssistantResponse> {
-    return postJson('/api/finance/assistant', { message }, 'QiFi Assistant request failed');
+    const userApiKey = localStorage.getItem('qifi_user_openai_api_key') || '';
+    const headers: Record<string, string> = {};
+    if (userApiKey) {
+      headers['x-openai-api-key'] = userApiKey;
+    }
+    return postJson('/api/finance/assistant', { message }, 'QiFi Assistant request failed', { headers });
   },
 
   async getAccounts(): Promise<Account[]> {
