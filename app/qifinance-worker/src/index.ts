@@ -7,9 +7,25 @@ export interface Env {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
   QIFI_API_TOKEN: string;
+  OPENAI_API_KEY: string;
+  OPENAI_MODEL?: string;
 }
 
 type JsonRecord = Record<string, any>;
+type AssistantActionStatus = "created" | "skipped" | "error";
+
+interface AssistantActionResult {
+  type: string;
+  status: AssistantActionStatus;
+  message: string;
+  record?: JsonRecord;
+}
+
+interface AssistantContext {
+  accounts: JsonRecord[];
+  counterparties: JsonRecord[];
+  rules: JsonRecord[];
+}
 
 const ALLOWED_ORIGINS = [
   "https://fi.qially.com",
@@ -66,6 +82,55 @@ const DOMAIN_ROUTES: Record<string, {
   }
 };
 
+const ALLOWED_ACCOUNT_TYPES = new Set([
+  "asset",
+  "liability",
+  "equity",
+  "revenue",
+  "expense",
+  "clearing",
+  "suspense"
+]);
+
+const ALLOWED_ASSISTANT_ACTIONS = new Set([
+  "create_account",
+  "create_counterparty",
+  "create_obligation",
+  "create_schedule",
+  "create_rule",
+  "create_transaction"
+]);
+
+const ASSISTANT_SYSTEM_PROMPT = `
+You are QiFi's private finance operations assistant. Convert the user's request into a small JSON action plan that QiFi can execute.
+
+Return JSON only with this shape:
+{
+  "summary": "short user-facing summary",
+  "warnings": ["optional warning"],
+  "actions": [
+    { "type": "create_account", "name": "...", "accountType": "asset", "accountKind": "checking", "institution": "...", "accountNumber": "...", "routingNumber": null, "description": "..." }
+  ]
+}
+
+Allowed action types are create_account, create_counterparty, create_obligation, create_schedule, create_rule, and create_transaction.
+Only create records. For requests that update, delete, reconcile, or are ambiguous, return no actions and explain what confirmation or detail is needed in summary.
+
+Account rules:
+- Checking and savings accounts are accountType "asset".
+- Credit cards and loans are accountType "liability".
+- Normalize Chase, JP Morgan, JPMorgan, and J.P. Morgan to institution "JPMorgan Chase".
+- If the user gives only a last four identifier, put that exact identifier in accountNumber and include it in the account name.
+- Use plain names such as "JPMorgan Chase Checking 9021" and "JPMorgan Chase Savings 1002".
+
+Transaction rules:
+- Amounts are positive for money entering the source account and negative for money leaving it.
+- Dates must be YYYY-MM-DD.
+- categoryAccountId is the chart-of-accounts category/posting account when known.
+
+Never invent SQL, credentials, or unsupported fields. If you do not have enough information to safely create a record, return actions [].
+`.trim();
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -97,6 +162,8 @@ export default {
           ok: true,
           hasSupabaseUrl: Boolean(env.SUPABASE_URL),
           hasServiceRoleKey: Boolean(env.SUPABASE_SERVICE_ROLE_KEY),
+          hasOpenAiKey: Boolean(env.OPENAI_API_KEY),
+          openAiModel: env.OPENAI_MODEL || "gpt-4.1-mini",
           supabaseUrlHost: host
         });
       } else {
@@ -186,6 +253,10 @@ async function router(request: Request, env: Env): Promise<Response> {
 
   if (path === "/api/finance/state" && request.method === "GET") {
     return await handleGetState(env);
+  }
+
+  if (path === "/api/finance/assistant" && request.method === "POST") {
+    return await handleAssistant(request, env);
   }
 
   if (path === "/api/finance/accounts") {
@@ -337,6 +408,581 @@ async function handleGetState(env: Env): Promise<Response> {
     counterparties,
     obligations
   });
+}
+
+async function handleAssistant(request: Request, env: Env): Promise<Response> {
+  if (!env.OPENAI_API_KEY) {
+    return json({ error: "OPENAI_API_KEY secret must be configured in the worker." }, 503);
+  }
+
+  const body = await request.json().catch(() => ({})) as JsonRecord;
+  const message = normalizeText(body.message ?? body.prompt);
+  if (!message) return json({ error: "Assistant message is required." }, 400);
+
+  const context = await buildAssistantContext(env);
+  const plan = await planAssistantActions(env, message, context);
+  const warnings = toStringArray(plan.warnings);
+  const plannedActions = Array.isArray(plan.actions) ? plan.actions.slice(0, 10) : [];
+  const results: AssistantActionResult[] = [];
+
+  for (const action of plannedActions) {
+    const type = normalizeText(action?.type);
+
+    if (!ALLOWED_ASSISTANT_ACTIONS.has(type)) {
+      results.push({
+        type: type || "unknown",
+        status: "skipped",
+        message: type ? `Unsupported assistant action: ${type}` : "Assistant returned an action without a type."
+      });
+      continue;
+    }
+
+    try {
+      results.push(await executeAssistantAction(action, env, context));
+    } catch (error: any) {
+      results.push({
+        type,
+        status: "error",
+        message: error?.message ?? `Failed to execute ${type}`
+      });
+    }
+  }
+
+  const createdCount = results.filter((result) => result.status === "created").length;
+  const errorCount = results.filter((result) => result.status === "error").length;
+  const summary = normalizeText(plan.summary ?? plan.message);
+  const resultMessage = summary || (
+    createdCount > 0
+      ? `Created ${createdCount} record${createdCount === 1 ? "" : "s"}.`
+      : "No records were created."
+  );
+
+  return json({
+    ok: errorCount === 0,
+    message: resultMessage,
+    createdCount,
+    errorCount,
+    warnings,
+    actions: results,
+    model: env.OPENAI_MODEL || "gpt-4.1-mini"
+  }, errorCount > 0 && createdCount === 0 ? 422 : 200);
+}
+
+async function buildAssistantContext(env: Env): Promise<AssistantContext> {
+  const [accounts, counterparties, rules] = await Promise.all([
+    selectAll(env, "finance_accounts", "code.asc"),
+    selectAll(env, "finance_counterparties", "name.asc"),
+    selectAll(env, "finance_transaction_rules", "created_at.desc")
+  ]);
+
+  return {
+    accounts: accounts.map((account) => ({
+      id: account.id,
+      code: account.code,
+      name: account.name,
+      type: account.type,
+      institution: account.institution,
+      parent_account_id: account.parent_account_id
+    })),
+    counterparties: counterparties.map((counterparty) => ({
+      id: counterparty.id,
+      name: counterparty.name,
+      relationship_type: counterparty.relationship_type,
+      tags: counterparty.tags || []
+    })),
+    rules: rules.map((rule) => ({
+      id: rule.id,
+      pattern: rule.pattern,
+      suggested_account_id: rule.suggested_account_id,
+      suggested_counterparty: rule.suggested_counterparty
+    }))
+  };
+}
+
+async function planAssistantActions(env: Env, message: string, context: AssistantContext): Promise<JsonRecord> {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: env.OPENAI_MODEL || "gpt-4.1-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: ASSISTANT_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: JSON.stringify({
+            request: message,
+            today: new Date().toISOString().slice(0, 10),
+            existingData: context
+          })
+        }
+      ]
+    })
+  });
+
+  if (!res.ok) {
+    throw new Error(`OpenAI request failed (${res.status}): ${redactSecret(await res.text())}`);
+  }
+
+  const data = await res.json() as JsonRecord;
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content !== "string" || !content.trim()) {
+    throw new Error("OpenAI returned an empty assistant plan.");
+  }
+
+  try {
+    return JSON.parse(content) as JsonRecord;
+  } catch {
+    throw new Error("OpenAI returned an assistant plan that was not valid JSON.");
+  }
+}
+
+async function executeAssistantAction(action: JsonRecord, env: Env, context: AssistantContext): Promise<AssistantActionResult> {
+  const type = normalizeText(action.type);
+
+  if (type === "create_account") return await createAssistantAccount(action, env, context);
+  if (type === "create_counterparty") return await createAssistantCounterparty(action, env, context);
+  if (type === "create_obligation") return await createAssistantObligation(action, env, context);
+  if (type === "create_schedule") return await createAssistantSchedule(action, env, context);
+  if (type === "create_rule") return await createAssistantRule(action, env, context);
+  if (type === "create_transaction") return await createAssistantTransaction(action, env, context);
+
+  return {
+    type,
+    status: "skipped",
+    message: `Unsupported assistant action: ${type}`
+  };
+}
+
+async function createAssistantAccount(action: JsonRecord, env: Env, context: AssistantContext): Promise<AssistantActionResult> {
+  const rawName = normalizeText(action.name);
+  const accountNumber = normalizeAccountNumber(action.accountNumber ?? action.account_number ?? action.last4);
+  const accountKind = normalizeAccountKind(action.accountKind ?? action.account_kind ?? rawName);
+  const institution = normalizeInstitution(action.institution, `${rawName} ${accountKind}`);
+  const accountType = normalizeAccountType(action.accountType ?? action.account_type ?? inferAccountType(rawName, accountKind));
+  const name = rawName || buildAccountName(institution, accountKind, accountNumber);
+
+  if (!ALLOWED_ACCOUNT_TYPES.has(accountType)) {
+    return {
+      type: "create_account",
+      status: "error",
+      message: `Unsupported account type: ${accountType || "blank"}`
+    };
+  }
+
+  if (!name) {
+    return {
+      type: "create_account",
+      status: "error",
+      message: "Account name is required."
+    };
+  }
+
+  const duplicate = context.accounts.find((account) => {
+    const sameName = normalizeText(account.name).toLowerCase() === name.toLowerCase();
+    const sameNumber = accountNumber &&
+      normalizeText(account.institution).toLowerCase() === institution.toLowerCase() &&
+      normalizeText(account.account_number ?? account.accountNumber) === accountNumber;
+    return sameName || sameNumber;
+  });
+
+  if (duplicate) {
+    return {
+      type: "create_account",
+      status: "skipped",
+      message: `Account already exists: ${duplicate.name}`,
+      record: duplicate
+    };
+  }
+
+  const requestedCode = normalizeText(action.code);
+  if (requestedCode && context.accounts.some((account) => normalizeText(account.code) === requestedCode)) {
+    return {
+      type: "create_account",
+      status: "error",
+      message: `Account code already exists: ${requestedCode}`
+    };
+  }
+
+  const record = {
+    id: uniqueId(
+      normalizeId(action.id) || buildAccountId(accountType, institution, accountKind, accountNumber, name),
+      context.accounts.map((account) => account.id)
+    ),
+    code: requestedCode || nextAccountCode(context.accounts, accountType),
+    name,
+    type: accountType,
+    description: normalizeText(action.description) || `${name} account created by QiFi Assistant.`,
+    accountNumber,
+    routingNumber: normalizeAccountNumber(action.routingNumber ?? action.routing_number),
+    institution,
+    parentAccountId: normalizeText(action.parentAccountId ?? action.parent_account_id) || null,
+    isActive: true
+  };
+
+  const created = await insertAssistantRecord(env, "finance_accounts", mapAccountInput(record, false), "/api/finance/accounts");
+  context.accounts.push({
+    id: created.id,
+    code: created.code,
+    name: created.name,
+    type: created.type,
+    institution: created.institution,
+    account_number: created.account_number,
+    parent_account_id: created.parent_account_id
+  });
+
+  return {
+    type: "create_account",
+    status: "created",
+    message: `Created account: ${created.name}`,
+    record: created
+  };
+}
+
+async function createAssistantCounterparty(action: JsonRecord, env: Env, context: AssistantContext): Promise<AssistantActionResult> {
+  const name = normalizeText(action.name);
+  if (!name) return assistantError("create_counterparty", "Counterparty name is required.");
+
+  const duplicate = context.counterparties.find((counterparty) => normalizeText(counterparty.name).toLowerCase() === name.toLowerCase());
+  if (duplicate) {
+    return {
+      type: "create_counterparty",
+      status: "skipped",
+      message: `Counterparty already exists: ${duplicate.name}`,
+      record: duplicate
+    };
+  }
+
+  const created = await insertAssistantRecord(env, "finance_counterparties", mapCounterpartyInput({
+    ...action,
+    id: normalizeId(action.id) || `cp-${slugify(name)}`,
+    name
+  }, false), "/api/finance/counterparties");
+
+  context.counterparties.push({
+    id: created.id,
+    name: created.name,
+    relationship_type: created.relationship_type,
+    tags: created.tags || []
+  });
+
+  return {
+    type: "create_counterparty",
+    status: "created",
+    message: `Created counterparty: ${created.name}`,
+    record: created
+  };
+}
+
+async function createAssistantObligation(action: JsonRecord, env: Env, context: AssistantContext): Promise<AssistantActionResult> {
+  const counterpartyId = normalizeText(action.counterpartyId ?? action.counterparty_id);
+  const amount = Number(action.amount);
+  const obligationType = normalizeText(action.obligationType ?? action.obligation_type ?? action.kind);
+  const description = normalizeText(action.description);
+
+  const missing = missingFields([
+    ["counterpartyId", counterpartyId],
+    ["amount", Number.isFinite(amount) ? amount : ""],
+    ["obligationType", obligationType],
+    ["description", description]
+  ]);
+  if (missing.length > 0) return assistantError("create_obligation", `Missing obligation fields: ${missing.join(", ")}`);
+  if (!context.counterparties.some((counterparty) => counterparty.id === counterpartyId)) {
+    return assistantError("create_obligation", `Counterparty not found: ${counterpartyId}`);
+  }
+
+  const created = await insertAssistantRecord(env, "finance_obligations", mapObligationInput({
+    ...action,
+    counterpartyId,
+    amount,
+    type: obligationType,
+    description
+  }, false), "/api/finance/obligations");
+
+  return {
+    type: "create_obligation",
+    status: "created",
+    message: `Created obligation: ${created.description}`,
+    record: created
+  };
+}
+
+async function createAssistantSchedule(action: JsonRecord, env: Env, context: AssistantContext): Promise<AssistantActionResult> {
+  const name = normalizeText(action.name);
+  const amount = Number(action.amount);
+  const accountId = normalizeText(action.accountId ?? action.account_id ?? action.categoryAccountId ?? action.category_account_id);
+  const sourceAccountId = normalizeText(action.sourceAccountId ?? action.source_account_id);
+  const frequency = normalizeText(action.frequency);
+  const nextDueDate = normalizeText(action.nextDueDate ?? action.next_due_date);
+
+  const missing = missingFields([
+    ["name", name],
+    ["amount", Number.isFinite(amount) ? amount : ""],
+    ["accountId", accountId],
+    ["sourceAccountId", sourceAccountId],
+    ["frequency", frequency],
+    ["nextDueDate", nextDueDate]
+  ]);
+  if (missing.length > 0) return assistantError("create_schedule", `Missing schedule fields: ${missing.join(", ")}`);
+  const missingAccounts = [accountId, sourceAccountId].filter((id) => !accountExists(context, id));
+  if (missingAccounts.length > 0) return assistantError("create_schedule", `Account not found: ${missingAccounts.join(", ")}`);
+
+  const created = await insertAssistantRecord(env, "finance_recurring_schedules", mapScheduleInput({
+    ...action,
+    name,
+    amount,
+    accountId,
+    sourceAccountId,
+    frequency,
+    nextDueDate
+  }, false), "/api/finance/schedules");
+
+  return {
+    type: "create_schedule",
+    status: "created",
+    message: `Created schedule: ${created.name}`,
+    record: created
+  };
+}
+
+async function createAssistantRule(action: JsonRecord, env: Env, context: AssistantContext): Promise<AssistantActionResult> {
+  const pattern = normalizeText(action.pattern);
+  const suggestedAccountId = normalizeText(action.suggestedAccountId ?? action.suggested_account_id);
+  const missing = missingFields([
+    ["pattern", pattern],
+    ["suggestedAccountId", suggestedAccountId]
+  ]);
+  if (missing.length > 0) return assistantError("create_rule", `Missing rule fields: ${missing.join(", ")}`);
+  if (!accountExists(context, suggestedAccountId)) return assistantError("create_rule", `Suggested account not found: ${suggestedAccountId}`);
+
+  const duplicate = context.rules.find((rule) => normalizeText(rule.pattern).toLowerCase() === pattern.toLowerCase());
+  if (duplicate) {
+    return {
+      type: "create_rule",
+      status: "skipped",
+      message: `Rule already exists for pattern: ${duplicate.pattern}`,
+      record: duplicate
+    };
+  }
+
+  const created = await insertAssistantRecord(env, "finance_transaction_rules", mapRuleInput({
+    ...action,
+    pattern,
+    suggestedAccountId
+  }, false), "/api/finance/rules");
+
+  context.rules.push({
+    id: created.id,
+    pattern: created.pattern,
+    suggested_account_id: created.suggested_account_id,
+    suggested_counterparty: created.suggested_counterparty
+  });
+
+  return {
+    type: "create_rule",
+    status: "created",
+    message: `Created rule: ${created.pattern}`,
+    record: created
+  };
+}
+
+async function createAssistantTransaction(action: JsonRecord, env: Env, context: AssistantContext): Promise<AssistantActionResult> {
+  const date = normalizeText(action.date);
+  const description = normalizeText(action.description);
+  const amount = Number(action.amount);
+  const sourceAccountId = normalizeText(action.sourceAccountId ?? action.source_account_id);
+  const categoryAccountId = normalizeText(action.categoryAccountId ?? action.category_account_id ?? action.accountId ?? action.account_id);
+
+  const missing = missingFields([
+    ["date", date],
+    ["description", description],
+    ["amount", Number.isFinite(amount) ? amount : ""],
+    ["sourceAccountId", sourceAccountId]
+  ]);
+  if (missing.length > 0) return assistantError("create_transaction", `Missing transaction fields: ${missing.join(", ")}`);
+  if (!accountExists(context, sourceAccountId)) return assistantError("create_transaction", `Source account not found: ${sourceAccountId}`);
+  if (categoryAccountId && !accountExists(context, categoryAccountId)) {
+    return assistantError("create_transaction", `Category account not found: ${categoryAccountId}`);
+  }
+
+  const txToInsert = mapTransactionInput({
+    ...action,
+    id: normalizeId(action.id) || `tx-${crypto.randomUUID()}`,
+    date,
+    description,
+    amount,
+    sourceAccountId,
+    ledgerStatus: categoryAccountId ? "posted" : "not_posted"
+  }, false);
+
+  const created = await insertAssistantRecord(env, "finance_master_transactions", txToInsert, "/api/finance/transactions");
+  if (categoryAccountId) await replaceLedgerEntries(env, created, categoryAccountId);
+
+  return {
+    type: "create_transaction",
+    status: "created",
+    message: `Created transaction: ${created.description}`,
+    record: created
+  };
+}
+
+async function insertAssistantRecord(env: Env, table: string, record: JsonRecord, route: string): Promise<JsonRecord> {
+  const res = await supabaseFetch(env, `/${table}`, {
+    method: "POST",
+    body: JSON.stringify(record),
+    headers: { "Prefer": "return=representation" }
+  });
+
+  if (!res.ok) throw new Error(await supabaseExecutionError(res, route));
+  const data = await res.json() as JsonRecord[];
+  return data[0];
+}
+
+async function supabaseExecutionError(res: Response, route: string): Promise<string> {
+  const details = await res.text();
+  return `Supabase request failed for ${route} (${res.status}): ${truncate(details, 600)}`;
+}
+
+function assistantError(type: string, message: string): AssistantActionResult {
+  return { type, status: "error", message };
+}
+
+function accountExists(context: AssistantContext, id: string): boolean {
+  return context.accounts.some((account) => account.id === id);
+}
+
+function missingFields(fields: [string, any][]): string[] {
+  return fields
+    .filter(([, value]) => value === undefined || value === null || value === "")
+    .map(([name]) => name);
+}
+
+function normalizeAccountType(value: any): string {
+  const type = normalizeText(value).toLowerCase();
+  return ALLOWED_ACCOUNT_TYPES.has(type) ? type : "";
+}
+
+function inferAccountType(name: string, kind: string): string {
+  const text = `${name} ${kind}`.toLowerCase();
+  if (/(credit card|card|loan|mortgage|liability)/.test(text)) return "liability";
+  if (/(income|revenue)/.test(text)) return "revenue";
+  if (/(expense|cost)/.test(text)) return "expense";
+  return "asset";
+}
+
+function normalizeAccountKind(value: any): string {
+  const text = normalizeText(value).toLowerCase();
+  if (text.includes("checking")) return "checking";
+  if (text.includes("savings") || text.includes("saving")) return "savings";
+  if (text.includes("credit")) return "credit card";
+  if (text.includes("loan")) return "loan";
+  if (text.includes("cash")) return "cash";
+  return normalizeText(value);
+}
+
+function normalizeInstitution(value: any, fallbackText = ""): string {
+  const raw = normalizeText(value);
+  const haystack = `${raw} ${fallbackText}`.toLowerCase();
+  if (/(jp\s?morgan|j\.p\.\s?morgan|jpmorgan|chase)/i.test(haystack)) return "JPMorgan Chase";
+  return raw;
+}
+
+function normalizeAccountNumber(value: any): string {
+  const text = normalizeText(value);
+  if (!text) return "";
+  return text.replace(/\s+/g, "");
+}
+
+function buildAccountName(institution: string, accountKind: string, accountNumber: string): string {
+  return [institution, titleCase(accountKind || "account"), accountNumber].filter(Boolean).join(" ").trim();
+}
+
+function buildAccountId(accountType: string, institution: string, accountKind: string, accountNumber: string, name: string): string {
+  const parts = [accountType, institution, accountKind, accountNumber || name]
+    .map(slugify)
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join("-") : `account-${crypto.randomUUID()}`;
+}
+
+function nextAccountCode(accounts: JsonRecord[], accountType: string): string {
+  const baseByType: Record<string, number> = {
+    asset: 1000,
+    liability: 2000,
+    equity: 3000,
+    revenue: 4000,
+    expense: 5000,
+    clearing: 8000,
+    suspense: 9000
+  };
+  const usedCodes = new Set(accounts.map((account) => normalizeText(account.code)));
+  let max = -1;
+  let width = 4;
+
+  for (const account of accounts) {
+    if (normalizeText(account.type) !== accountType) continue;
+    const code = normalizeText(account.code);
+    if (!/^\d+$/.test(code)) continue;
+    max = Math.max(max, Number.parseInt(code, 10));
+    width = Math.max(width, code.length);
+  }
+
+  let next = max >= 0 ? max + 10 : baseByType[accountType] ?? 1000;
+  let candidate = String(next).padStart(width, "0");
+  while (usedCodes.has(candidate)) {
+    next += 10;
+    candidate = String(next).padStart(width, "0");
+  }
+  return candidate;
+}
+
+function uniqueId(base: string, existingIds: string[]): string {
+  const used = new Set(existingIds);
+  const cleanBase = normalizeId(base) || `record-${crypto.randomUUID()}`;
+  let candidate = cleanBase;
+  let index = 2;
+
+  while (used.has(candidate)) {
+    candidate = `${cleanBase}-${index}`;
+    index += 1;
+  }
+
+  return candidate;
+}
+
+function normalizeId(value: any): string {
+  return slugify(value).slice(0, 100).replace(/^-+|-+$/g, "");
+}
+
+function slugify(value: any): string {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function titleCase(value: string): string {
+  return value.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function normalizeText(value: any): string {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
+}
+
+function toStringArray(value: any): string[] {
+  return Array.isArray(value) ? value.map(normalizeText).filter(Boolean) : [];
+}
+
+function truncate(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
+function redactSecret(value: string): string {
+  return truncate(value.replace(/sk-[A-Za-z0-9_-]+/g, "sk-...redacted"), 900);
 }
 
 async function handleDomainRoute(domain: string, id: string | undefined, request: Request, env: Env): Promise<Response> {
@@ -651,7 +1297,12 @@ function runCategorizationHeuristics(rawDesc: string, rules: any[]): { accountId
 
 async function handleImportPreview(request: Request, env: Env): Promise<Response> {
   const body = await request.json() as JsonRecord;
-  const { csvText, fileName, columnMappings, hasHeaders } = body;
+  const { csvText, fileName, columnMappings, hasHeaders, amountMode } = body;
+
+  const mappedTargets = Object.values(columnMappings || {}).flat();
+  const hasInflowMapped = mappedTargets.includes("inflow_amount");
+  const hasOutflowMapped = mappedTargets.includes("amount");
+  const effectiveAmountMode = amountMode || (hasInflowMapped && hasOutflowMapped ? "separate" : "single");
 
   if (!csvText) return json({ error: "Missing csvText in request body" }, 400);
 
@@ -712,7 +1363,7 @@ async function handleImportPreview(request: Request, env: Env): Promise<Response
       });
     }
 
-    if (hasOutflowCol && hasInflowCol) {
+    if (effectiveAmountMode === "separate" && hasOutflowCol && hasInflowCol) {
       if (parsedOutflow !== 0 && parsedInflow === 0) {
         rowData.amount = parsedOutflow > 0 ? -parsedOutflow : parsedOutflow;
       } else if (parsedInflow !== 0 && parsedOutflow === 0) {

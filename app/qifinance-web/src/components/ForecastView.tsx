@@ -668,7 +668,7 @@ export default function ForecastView() {
                 <span className="text-[10px] font-bold text-zinc-400 uppercase block tracking-wider">Source Receipt Attachment</span>
                 <label className="bg-zinc-900 border border-zinc-800 hover:border-emerald-500 text-zinc-400 hover:text-white px-2 py-1 rounded text-[9px] font-bold cursor-pointer transition-all">
                   Upload file
-                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => handleQuickFileChange(e, setQTxFileName, setQTxFileType, setQTxFileDataUrl)} />
+                  <input type="file" accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" className="hidden" onChange={e => handleQuickFileChange(e, setQTxFileName, setQTxFileType, setQTxFileDataUrl)} />
                 </label>
               </div>
               {qTxFileName ? (
@@ -741,7 +741,7 @@ export default function ForecastView() {
                 <span className="text-[10px] font-bold text-zinc-400 uppercase block tracking-wider">Bill Document / Invoice</span>
                 <label className="bg-zinc-900 border border-zinc-800 hover:border-emerald-500 text-zinc-400 hover:text-white px-2 py-1 rounded text-[9px] font-bold cursor-pointer transition-all">
                   Upload Invoice PDF
-                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => handleQuickFileChange(e, setQBillFileName, setQBillFileType, setQBillFileDataUrl)} />
+                  <input type="file" accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" className="hidden" onChange={e => handleQuickFileChange(e, setQBillFileName, setQBillFileType, setQBillFileDataUrl)} />
                 </label>
               </div>
               {qBillFileName ? (
@@ -829,7 +829,7 @@ export default function ForecastView() {
                 <span className="text-[10px] font-bold text-zinc-400 uppercase block tracking-wider">Account Agreement / W-9 Forms</span>
                 <label className="bg-zinc-900 border border-zinc-800 hover:border-emerald-500 text-zinc-400 hover:text-white px-2 py-1 rounded text-[9px] font-bold cursor-pointer transition-all">
                   Attach Agreement
-                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => handleQuickFileChange(e, setQAccFileName, setQAccFileType, setQAccFileDataUrl)} />
+                  <input type="file" accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" className="hidden" onChange={e => handleQuickFileChange(e, setQAccFileName, setQAccFileType, setQAccFileDataUrl)} />
                 </label>
               </div>
               {qAccFileName ? (
@@ -906,7 +906,7 @@ export default function ForecastView() {
                 <span className="text-[10px] font-bold text-zinc-400 uppercase block tracking-wider">Guidelines or reference attachments</span>
                 <label className="bg-zinc-900 border border-zinc-800 hover:border-emerald-500 text-zinc-400 hover:text-white px-2 py-1 rounded text-[9px] font-bold cursor-pointer transition-all">
                   Attach Guidelines
-                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => handleQuickFileChange(e, setQCatFileName, setQCatFileType, setQCatFileDataUrl)} />
+                  <input type="file" accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" className="hidden" onChange={e => handleQuickFileChange(e, setQCatFileName, setQCatFileType, setQCatFileDataUrl)} />
                 </label>
               </div>
               {qCatFileName ? (
@@ -979,7 +979,7 @@ export default function ForecastView() {
                 <span className="text-[10px] font-bold text-zinc-400 uppercase block tracking-wider">Contract documents / agreements</span>
                 <label className="bg-zinc-900 border border-zinc-800 hover:border-emerald-500 text-zinc-400 hover:text-white px-2 py-1 rounded text-[9px] font-bold cursor-pointer transition-all">
                   Attach Contract
-                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => handleQuickFileChange(e, setQCpFileName, setQCpFileType, setQCpFileDataUrl)} />
+                  <input type="file" accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" className="hidden" onChange={e => handleQuickFileChange(e, setQCpFileName, setQCpFileType, setQCpFileDataUrl)} />
                 </label>
               </div>
               {qCpFileName ? (

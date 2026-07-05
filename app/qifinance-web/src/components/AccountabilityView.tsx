@@ -6,6 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQiStore } from '../store';
 import { AccountabilityObligation } from '../types';
+import AttachmentPreviewModal from './AttachmentPreviewModal';
 import { 
   ShieldAlert, AlertTriangle, CheckSquare, PlusCircle, Calendar, 
   Trash2, User, Building2, HelpCircle, Tag, DollarSign, RefreshCw, Check
@@ -539,7 +540,7 @@ export default function AccountabilityView() {
                               📎 Upload Invoice File
                               <input 
                                 type="file" 
-                                accept="image/*,application/pdf" 
+                                accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                                 className="hidden" 
                                 onChange={e => handleOblFileUpload(ob.id, e)} 
                               />
@@ -588,8 +589,9 @@ export default function AccountabilityView() {
           </table>
         </div>
       </div>
-      {/* LIGHTBOX FILE PREVIEW OVERLAY */}
-      {previewAttachment && (
+      <AttachmentPreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} titlePrefix="Bill evidence" />
+      {/* Legacy preview markup kept inert until the modal cleanup pass. */}
+      {false && previewAttachment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl max-w-lg w-full flex flex-col animate-scaleUp">
             <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/40">

@@ -21,11 +21,12 @@ import AccountabilityView from './components/AccountabilityView';
 import ReportsView from './components/ReportsView';
 import SettingsView from './components/SettingsView';
 import CategoryRulesView from './components/CategoryRulesView';
+import AssistantView from './components/AssistantView';
 
 import { 
   TrendingUp, Inbox, Sparkles, Layers, BookOpen,
   Users, FileText, ShieldCheck, BarChart2, ShieldAlert,
-  Settings as SettingsIcon, Menu, X, CheckSquare, Sliders, LockKeyhole
+  Settings as SettingsIcon, Sliders, LockKeyhole, Bot
 } from 'lucide-react';
 
 function SidebarAndNav() {
@@ -90,6 +91,13 @@ function SidebarAndNav() {
               <div className="flex items-center gap-2.5">
                 <TrendingUp size={16} className={navIconClass('/dashboard')} />
                 <span>Dashboard / Forecast</span>
+              </div>
+            </Link>
+
+            <Link to="/assistant" className={linkClass('/assistant')}>
+              <div className="flex items-center gap-2.5">
+                <Bot size={16} className={navIconClass('/assistant')} />
+                <span>Qi Assistant</span>
               </div>
             </Link>
 
@@ -213,6 +221,7 @@ function SidebarAndNav() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<ForecastView />} />
+              <Route path="/assistant" element={<AssistantView />} />
               <Route path="/accounts" element={<ChartOfAccountsView />} />
               <Route path="/transactions" element={<LedgerView />} />
               <Route path="/transactions/new" element={<LedgerView />} />
@@ -236,6 +245,10 @@ function SidebarAndNav() {
           <Link to="/dashboard" className={`flex flex-col items-center gap-1 transition-all ${isActive('/dashboard') ? 'text-emerald-400' : 'text-zinc-500'}`}>
             <TrendingUp size={18} />
             <span className="text-[9px] font-semibold">Forecast</span>
+          </Link>
+          <Link to="/assistant" className={`flex flex-col items-center gap-1 transition-all ${isActive('/assistant') ? 'text-emerald-400' : 'text-zinc-500'}`}>
+            <Bot size={18} />
+            <span className="text-[9px] font-semibold">AI</span>
           </Link>
           <Link to="/imports/review" className={`flex flex-col items-center gap-1 transition-all relative ${isActive('/imports/review') ? 'text-emerald-400' : 'text-zinc-500'}`}>
             <Inbox size={18} />

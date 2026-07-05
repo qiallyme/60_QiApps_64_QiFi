@@ -37,6 +37,21 @@ export default function ImportView() {
   const [columnMappings, setColumnMappings] = useState<Record<number, string[]>>({});
   const [hasHeaders, setHasHeaders] = useState(true);
   const [showMappingStep, setShowMappingStep] = useState(false);
+  const [amountMode, setAmountMode] = useState<'single' | 'separate'>('single');
+
+  const handleAmountModeChange = (mode: 'single' | 'separate') => {
+    setAmountMode(mode);
+    if (mode === 'single') {
+      setColumnMappings(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(key => {
+          const colIdx = Number(key);
+          next[colIdx] = (next[colIdx] || []).filter(f => f !== 'inflow_amount');
+        });
+        return next;
+      });
+    }
+  };
 
   // Missing Values Step State
   const [showMissingStep, setShowMissingStep] = useState(false);
@@ -61,17 +76,45 @@ export default function ImportView() {
     matchingRowIds: string[];
   } | null>(null);
 
-  // Target fields definition - added inflow_amount to support split debit/credit columns
-  const TARGET_FIELDS = [
-    { id: 'date', label: 'Date', required: true, desc: 'Transaction date' },
-    { id: 'description', label: 'Description', required: true, desc: 'Primary description or merchant text' },
-    { id: 'amount', label: 'Amount / Outflow (Debit)', required: true, desc: 'Standard numeric amount, or debit/outflow' },
-    { id: 'inflow_amount', label: 'Inflow (Credit)', required: false, desc: 'Credit column (optional for separate-column bank files)' },
-    { id: 'counterparty', label: 'Counterparty', required: false, desc: 'Merchant name or client recipient' },
-    { id: 'accountId', label: 'Category Account', required: false, desc: 'COA account category name or code' },
-    { id: 'tags', label: 'Tags', required: false, desc: 'Comma-separated labels or tags' },
-    { id: 'memo', label: 'Memo', required: false, desc: 'Additional custom text comment' },
-  ];
+  // Target fields definition - dynamically computed based on amountMode
+  const targetFields = useMemo(() => {
+    const baseFields = [
+      { id: 'date', label: 'Date', required: true, desc: 'Transaction date' },
+      { id: 'description', label: 'Description', required: true, desc: 'Primary description or merchant text' },
+    ];
+    
+    if (amountMode === 'single') {
+      baseFields.push({ 
+        id: 'amount', 
+        label: 'Amount (Single Column)', 
+        required: true, 
+        desc: 'Single column containing amounts (Positive is Inflow/Refund, Negative is Outflow/Charge)' 
+      });
+    } else {
+      baseFields.push(
+        { 
+          id: 'amount', 
+          label: 'Outflow (Debit)', 
+          required: true, 
+          desc: 'Column representing outflows/charges (usually positive numbers)' 
+        },
+        { 
+          id: 'inflow_amount', 
+          label: 'Inflow (Credit)', 
+          required: true, 
+          desc: 'Column representing inflows/credits/deposits' 
+        }
+      );
+    }
+
+    return [
+      ...baseFields,
+      { id: 'counterparty', label: 'Counterparty', required: false, desc: 'Merchant name or client recipient' },
+      { id: 'accountId', label: 'Category Account', required: false, desc: 'COA account category name or code' },
+      { id: 'tags', label: 'Tags', required: false, desc: 'Comma-separated labels or tags' },
+      { id: 'memo', label: 'Memo', required: false, desc: 'Additional custom text comment' },
+    ];
+  }, [amountMode]);
 
   // Let column map to multiple options (Free mapping style!)
   const toggleMapping = (colIdx: number, fieldId: string) => {
@@ -113,6 +156,7 @@ export default function ImportView() {
       `06/29/2026,06/29/2026,UBER RIDE TRP CHARGE 99,Travel,Sale,-18.25,`
     );
     setTargetAccountId('liabilities-chasecc');
+    setAmountMode('single');
     setColumnMappings({
       0: ['date'],
       2: ['description'],
@@ -132,6 +176,7 @@ export default function ImportView() {
       `2026-06-23,5812,dinner with team,Me,Bistro,-34.50`
     );
     setTargetAccountId('assets-checking');
+    setAmountMode('single');
     setColumnMappings({
       0: ['date'],
       2: ['description', 'memo'], // Map single column to description and memo at once!
@@ -160,6 +205,13 @@ export default function ImportView() {
       const firstDataLine = lines[hasHeaders ? 1 : 0] || lines[0];
       const initialMappings: Record<number, string[]> = {};
 
+      // Auto-detect amount columns mode
+      const hLowers = headers.map(h => h.toLowerCase());
+      const hasOutflowTerm = hLowers.some(h => h.includes('debit') || h.includes('outflow') || h.includes('charge') || h.includes('withdraw') || h.includes('spent') || h.includes('expense'));
+      const hasInflowTerm = hLowers.some(h => h.includes('credit') || h.includes('inflow') || h.includes('deposit') || h.includes('payment') || h.includes('receive'));
+      const detectedSeparate = hasOutflowTerm && hasInflowTerm;
+      setAmountMode(detectedSeparate ? 'separate' : 'single');
+
       headers.forEach((header, i) => {
         const hLower = header.toLowerCase();
         const cellVal = (firstDataLine[i] || '').trim();
@@ -167,6 +219,10 @@ export default function ImportView() {
         
         if (hLower.includes('date')) {
           fields.push('date');
+        } else if (hLower.includes('debit') || hLower.includes('outflow') || hLower.includes('charge') || hLower.includes('withdraw') || hLower.includes('spent') || hLower.includes('expense')) {
+          fields.push('amount');
+        } else if (hLower.includes('credit') || hLower.includes('inflow') || hLower.includes('deposit') || hLower.includes('payment') || hLower.includes('receive')) {
+          fields.push(detectedSeparate ? 'inflow_amount' : 'amount');
         } else if (hLower.includes('amount') || hLower.includes('value') || hLower.includes('price')) {
           fields.push('amount');
         } else if (hLower.includes('desc') || hLower.includes('note') || hLower.includes('title') || hLower.includes('payee') || hLower.includes('recipient')) {
@@ -302,7 +358,7 @@ export default function ImportView() {
       }
 
       // Handle dual debit/credit split columns
-      if (hasOutflowCol && hasInflowCol) {
+      if (amountMode === 'separate' && hasOutflowCol && hasInflowCol) {
         if (parsedOutflow !== 0 && parsedInflow === 0) {
           rowData.amount = parsedOutflow > 0 ? -parsedOutflow : parsedOutflow;
         } else if (parsedInflow !== 0 && parsedOutflow === 0) {
@@ -845,16 +901,48 @@ export default function ImportView() {
               </button>
             </div>
 
-            {/* HEADER TOGGLE */}
-            <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-zinc-300 font-medium">
-              <input 
-                type="checkbox" 
-                checked={hasHeaders} 
-                onChange={e => setHasHeaders(e.target.checked)}
-                className="rounded text-emerald-600 focus:ring-emerald-500 bg-zinc-900 border-zinc-800 w-4 h-4"
-              />
-              First row represents column labels (skip processing line 1)
-            </label>
+            {/* AMOUNT COLUMN MODE SELECTOR & HEADER TOGGLE */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900/30 p-4 rounded-xl border border-zinc-800/60">
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-zinc-400 font-mono tracking-wider block">Amount Column Structure</span>
+                <div className="flex gap-4">
+                  <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-zinc-300 font-medium">
+                    <input 
+                      type="radio" 
+                      name="amountMode" 
+                      value="single"
+                      checked={amountMode === 'single'} 
+                      onChange={() => handleAmountModeChange('single')}
+                      className="text-emerald-600 focus:ring-emerald-500 bg-zinc-900 border-zinc-800 w-4 h-4 cursor-pointer"
+                    />
+                    Single Column (Positive = Inflow, Negative = Outflow)
+                  </label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-zinc-300 font-medium">
+                    <input 
+                      type="radio" 
+                      name="amountMode" 
+                      value="separate"
+                      checked={amountMode === 'separate'} 
+                      onChange={() => handleAmountModeChange('separate')}
+                      className="text-emerald-600 focus:ring-emerald-500 bg-zinc-900 border-zinc-800 w-4 h-4 cursor-pointer"
+                    />
+                    Separate Columns (Outflow & Inflow)
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex items-center">
+                <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-zinc-300 font-medium">
+                  <input 
+                    type="checkbox" 
+                    checked={hasHeaders} 
+                    onChange={e => setHasHeaders(e.target.checked)}
+                    className="rounded text-emerald-600 focus:ring-emerald-500 bg-zinc-900 border-zinc-800 w-4 h-4 cursor-pointer"
+                  />
+                  First row represents labels (skip header row)
+                </label>
+              </div>
+            </div>
 
             {/* INTERACTIVE COLUMN MAPPER MATRIX */}
             <div className="space-y-4">
@@ -881,7 +969,26 @@ export default function ImportView() {
 
                       {/* Map Targets Grid */}
                       <div className="flex flex-wrap gap-1.5 xl:justify-end items-center">
-                        {TARGET_FIELDS.map(field => {
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setColumnMappings(prev => ({
+                              ...prev,
+                              [colIdx]: []
+                            }));
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
+                            mappedFields.length === 0
+                              ? 'bg-zinc-800 text-zinc-200 border-zinc-700 shadow-md font-bold'
+                              : 'bg-zinc-950 text-zinc-500 border-zinc-850 hover:text-zinc-300 hover:border-zinc-750'
+                          }`}
+                          title="Do not map or parse this column"
+                        >
+                          {mappedFields.length === 0 && <Check size={10} />}
+                          Ignore Column
+                        </button>
+
+                        {targetFields.map(field => {
                           const isSelected = mappedFields.includes(field.id);
                           return (
                             <button
@@ -890,7 +997,7 @@ export default function ImportView() {
                               onClick={() => toggleMapping(colIdx, field.id)}
                               className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
                                 isSelected
-                                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25 shadow-md'
+                                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25 shadow-md font-bold'
                                   : 'bg-zinc-950 text-zinc-500 border-zinc-850 hover:text-zinc-300 hover:border-zinc-700'
                               }`}
                               title={field.desc}
@@ -912,7 +1019,7 @@ export default function ImportView() {
             {/* Validation Notification Banner */}
             {(() => {
               const mappedTargets = Object.values(columnMappings).flat();
-              const missingRequired = TARGET_FIELDS.filter(f => f.required && !mappedTargets.includes(f.id));
+              const missingRequired = targetFields.filter(f => f.required && !mappedTargets.includes(f.id));
               
               if (missingRequired.length > 0) {
                 return (
@@ -937,7 +1044,7 @@ export default function ImportView() {
                 onClick={handleIngest}
                 disabled={(() => {
                   const mappedTargets = Object.values(columnMappings).flat();
-                  return TARGET_FIELDS.some(f => f.required && !mappedTargets.includes(f.id));
+                  return targetFields.some(f => f.required && !mappedTargets.includes(f.id));
                 })()}
                 className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-650 disabled:border-transparent text-white px-5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer border border-emerald-500/30 shadow-lg transition-all"
               >

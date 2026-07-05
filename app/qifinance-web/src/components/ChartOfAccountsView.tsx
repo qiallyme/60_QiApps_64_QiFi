@@ -6,6 +6,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useQiStore } from '../store';
 import { Account, AccountType, Attachment } from '../types';
+import AttachmentPreviewModal from './AttachmentPreviewModal';
 import { 
   Plus, Check, X, Shield, ArrowUpRight, ArrowDownLeft, 
   Layers, Heart, Database, Bookmark, PlusCircle, AlertCircle,
@@ -900,7 +901,7 @@ export default function ChartOfAccountsView() {
                   <input 
                     type="file" 
                     ref={accountDocInputRef}
-                    accept="image/*,application/pdf,.csv,.xlsx,.txt" 
+                    accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                     className="hidden" 
                     onChange={handleAccountDocUpload} 
                   />
@@ -1053,8 +1054,9 @@ export default function ChartOfAccountsView() {
         </div>
       )}
 
-      {/* SUB-MODAL PREVIEW ATTACHMENT */}
-      {previewAttachment && (
+      <AttachmentPreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} titlePrefix="Account document" />
+      {/* Legacy preview markup kept inert until the modal cleanup pass. */}
+      {false && previewAttachment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-2xl w-full flex flex-col max-h-[85vh] overflow-hidden shadow-2xl">
             <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-800">

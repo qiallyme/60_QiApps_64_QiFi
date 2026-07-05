@@ -6,6 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQiStore } from '../store';
 import { Transaction, Attachment } from '../types';
+import AttachmentPreviewModal from './AttachmentPreviewModal';
 import { 
   TrendingUp, ArrowUpRight, ArrowDownLeft, Calendar, FileText, 
   Percent, Wallet, CheckCircle, ShieldAlert, Sparkles, PieChart,
@@ -17,6 +18,7 @@ type ReportTab = 'p&l' | 'pnl-counterparty' | 'biz-vs-pers' | 'tax' | 'custom-bu
 export default function ReportsView() {
   const [activeReportTab, setActiveReportTab] = useState<ReportTab>('p&l');
   const { transactions, accounts, ledgerEntries, attachments, getAccountBalance } = useQiStore();
+  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
 
   // Print Mode State (renders the high-contrast paper layout overlay)
   const [printModeActive, setPrintModeActive] = useState(false);
@@ -960,7 +962,12 @@ export default function ReportsView() {
                             <span className="font-bold text-zinc-900 text-xs block truncate max-w-[200px]">{tx.counterparty}</span>
                             <span className="text-[9px] text-zinc-500 font-mono block">TX Date: {tx.date} | ${Math.abs(tx.amount).toFixed(2)}</span>
                           </div>
-                          <span className="text-[9px] font-mono font-bold bg-zinc-200 text-zinc-700 px-2 py-0.5 rounded">Voucher Document</span>
+                          <button
+                            onClick={() => setPreviewAttachment(attach)}
+                            className="text-[9px] font-mono font-bold bg-zinc-200 hover:bg-zinc-300 text-zinc-700 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                          >
+                            View Document
+                          </button>
                         </div>
 
                         {/* Receipt image */}
@@ -1014,6 +1021,8 @@ export default function ReportsView() {
           </div>
         </div>
       )}
+
+      <AttachmentPreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} titlePrefix="Report voucher" />
 
     </div>
   );

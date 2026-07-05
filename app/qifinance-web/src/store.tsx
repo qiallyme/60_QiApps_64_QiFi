@@ -26,6 +26,7 @@ interface QiContextType {
   
   // Balance Helpers
   getAccountBalance: (accountId: string) => number;
+  refreshData: () => Promise<void>;
   
   // Actions
   addAccount: (account: Omit<Account, 'isActive'>) => void;
@@ -1523,6 +1524,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       counterparties,
       obligations,
       getAccountBalance,
+      refreshData: refreshApiState,
       addAccount,
       updateAccount,
       deleteAccount,

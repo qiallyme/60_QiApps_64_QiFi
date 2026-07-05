@@ -6,6 +6,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useQiStore } from '../store';
 import { Statement, Transaction, Attachment } from '../types';
+import AttachmentPreviewModal from './AttachmentPreviewModal';
 import { 
   CheckCircle, AlertCircle, Calendar, Plus, Trash2, 
   ArrowRight, ShieldAlert, CheckSquare, Square, DollarSign,
@@ -818,7 +819,7 @@ export default function ReconciliationView() {
                       ref={fileInputRef}
                       onChange={(e) => handleFileUpload(e.target.files)}
                       className="hidden"
-                      accept="image/*,application/pdf,text/plain,text/csv"
+                      accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                     />
                     <Upload size={24} className="text-zinc-500 animate-pulse" />
                     <span className="text-xs font-semibold text-zinc-300">Drag statement file here, or click to upload</span>
@@ -1012,8 +1013,9 @@ export default function ReconciliationView() {
         )
       )}
 
-      {/* MODAL PREVIEW ATTACHMENT */}
-      {previewAttachment && (
+      <AttachmentPreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} titlePrefix="Statement document" />
+      {/* Legacy preview markup kept inert until the modal cleanup pass. */}
+      {false && previewAttachment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-2xl w-full flex flex-col max-h-[85vh] overflow-hidden shadow-2xl">
             <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-800">

@@ -6,6 +6,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useQiStore } from '../store';
 import { Transaction, Attachment, Account, Counterparty, AccountabilityObligation } from '../types';
+import AttachmentPreviewModal from './AttachmentPreviewModal';
 import { 
   FileText, ShieldAlert, CheckCircle, Upload, Trash2, 
   Eye, Image as ImageIcon, Calendar, Plus, Tag, HelpCircle, 
@@ -290,7 +291,7 @@ export default function EvidenceView() {
               <input 
                 type="file" 
                 ref={fileInputRef}
-                accept="image/*,application/pdf"
+                accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                 className="hidden" 
                 disabled={!uploadEntityId}
                 onChange={handleGlobalFileUpload} 
@@ -369,7 +370,7 @@ export default function EvidenceView() {
                           <div className="flex items-center gap-2 justify-end">
                             <label className="flex items-center gap-1 bg-zinc-950 border border-zinc-800 hover:border-emerald-500/40 hover:bg-emerald-500/5 text-zinc-400 hover:text-emerald-400 px-2 py-1 rounded text-[10px] font-bold cursor-pointer transition-all">
                               <Upload size={11} /> Upload
-                              <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => {
+                              <input type="file" accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" className="hidden" onChange={(e) => {
                                 if (e.target.files && e.target.files[0]) {
                                   const file = e.target.files[0];
                                   const reader = new FileReader();
@@ -494,37 +495,7 @@ export default function EvidenceView() {
         </div>
       )}
 
-      {/* LIGHTBOX MODAL FOR PREVIEWING */}
-      {viewingAttachment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-md animate-fadeIn">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl max-w-lg w-full flex flex-col animate-scaleUp">
-            <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/40">
-              <div className="flex items-center gap-2">
-                <FileText className="text-emerald-400" size={18} />
-                <h3 className="font-bold text-white text-sm truncate max-w-[280px] font-display">{viewingAttachment.fileName}</h3>
-              </div>
-              <button onClick={() => setViewingAttachment(null)} className="text-zinc-500 hover:text-white bg-zinc-800 p-1.5 rounded-lg cursor-pointer"><X size={16} /></button>
-            </div>
-
-            <div className="p-6 flex items-center justify-center bg-zinc-950 min-h-[300px]">
-              {viewingAttachment.dataUrl.startsWith('data:image') || viewingAttachment.dataUrl.includes('unsplash') ? (
-                <img src={viewingAttachment.dataUrl} alt={viewingAttachment.fileName} className="max-h-[360px] w-auto object-contain rounded-xl border border-zinc-800 shadow" />
-              ) : (
-                <div className="text-center space-y-3">
-                  <FileText className="mx-auto text-zinc-600 animate-pulse" size={60} />
-                  <p className="text-zinc-400 text-xs">Spreadsheet or PDF binary format ({viewingAttachment.fileType})</p>
-                  <a href={viewingAttachment.dataUrl} download={viewingAttachment.fileName} className="inline-block bg-zinc-800 text-zinc-200 border border-zinc-700 hover:border-zinc-650 px-4 py-2 rounded-xl text-xs font-bold transition-all">Download File</a>
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 border-t border-zinc-800 bg-zinc-950/25">
-              <span className="text-[9px] uppercase font-mono text-zinc-500 block">Notes/Purpose:</span>
-              <p className="text-xs text-zinc-300 italic mt-1">{viewingAttachment.notes || 'No comments written.'}</p>
-            </div>
-          </div>
-        </div>
-      )}
+      <AttachmentPreviewModal attachment={viewingAttachment} onClose={() => setViewingAttachment(null)} />
 
     </div>
   );

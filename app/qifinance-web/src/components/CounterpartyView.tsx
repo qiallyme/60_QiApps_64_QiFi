@@ -6,6 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQiStore } from '../store';
 import { Counterparty, AccountabilityObligation, Attachment, Transaction } from '../types';
+import AttachmentPreviewModal from './AttachmentPreviewModal';
 import { 
   Users, User, Building2, Search, PlusCircle, ArrowLeft, 
   ArrowUpRight, ArrowDownLeft, Tag, FileText, Calendar, 
@@ -790,7 +791,7 @@ export default function CounterpartyView() {
               <input 
                 type="file" 
                 ref={fileInputRef}
-                accept="image/*,application/pdf" 
+                accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                 className="hidden" 
                 onChange={handleCpFileUpload} 
               />
@@ -829,8 +830,9 @@ export default function CounterpartyView() {
           )}
         </div>
 
-        {/* LIGHTBOX PREVIEW OVERLAY */}
-        {previewAttachment && (
+        <AttachmentPreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} titlePrefix="Partner document" />
+        {/* Legacy preview markup kept inert until the modal cleanup pass. */}
+        {false && previewAttachment && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-md animate-fadeIn">
             <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl max-w-lg w-full flex flex-col animate-scaleUp">
               <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/40">

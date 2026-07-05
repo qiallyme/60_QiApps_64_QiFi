@@ -157,6 +157,23 @@ export interface FinanceState {
   obligations: any[];
 }
 
+export interface AssistantActionResult {
+  type: string;
+  status: 'created' | 'skipped' | 'error';
+  message: string;
+  record?: any;
+}
+
+export interface AssistantResponse {
+  ok: boolean;
+  message: string;
+  createdCount: number;
+  errorCount: number;
+  warnings: string[];
+  actions: AssistantActionResult[];
+  model: string;
+}
+
 export const qifinanceApi = {
   setAuthToken(token: string): void {
     localStorage.setItem(AUTH_STORAGE_KEY, token.trim());
@@ -180,6 +197,10 @@ export const qifinanceApi = {
 
   async getState(): Promise<FinanceState> {
     return requestJson('/api/finance/state', 'Failed to fetch finance state');
+  },
+
+  async askAssistant(message: string): Promise<AssistantResponse> {
+    return postJson('/api/finance/assistant', { message }, 'QiFi Assistant request failed');
   },
 
   async getAccounts(): Promise<Account[]> {
@@ -231,7 +252,8 @@ export const qifinanceApi = {
     fileName: string,
     sourceAccountId: string,
     columnMappings: Record<number, string[]>,
-    hasHeaders: boolean
+    hasHeaders: boolean,
+    amountMode?: 'single' | 'separate'
   ): Promise<ImportPreviewResponse> {
     return postJson('/api/finance/import/preview', {
       csvText,
@@ -239,6 +261,7 @@ export const qifinanceApi = {
       sourceAccountId,
       columnMappings,
       hasHeaders,
+      amountMode,
     }, 'Failed to fetch import preview');
   },
 

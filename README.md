@@ -32,10 +32,15 @@ Set the production secret before deploying:
 cd app/qifinance-worker
 npx wrangler secret put QIFI_API_TOKEN
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+npx wrangler secret put OPENAI_API_KEY
 npx wrangler deploy
 ```
 
 For local Worker development, copy `.dev.vars.example` to `.dev.vars` and fill in private values. Do not commit `.dev.vars`.
+
+## Qi Assistant
+
+QiFi includes a protected assistant endpoint at `/api/finance/assistant`. The assistant plans requests with OpenAI, then the Worker executes only whitelisted create actions through the existing Supabase gateway.
 
 ## Installable App
 
