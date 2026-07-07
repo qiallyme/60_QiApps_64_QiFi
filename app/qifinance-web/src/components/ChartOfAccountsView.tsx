@@ -398,7 +398,7 @@ export default function ChartOfAccountsView() {
             Chart of Accounts (COA)
           </h2>
           <p className="text-xs text-zinc-400 font-sans mt-0.5">
-            Configure parent groupings, routing/account numbers, and institutional links. Click any account to manage agreements, edit details, or upload documents.
+            Configure accounting buckets, parent groupings, normal balances, and supporting documents. Real bank, card, cash, and loan details belong in Financial Accounts.
           </p>
         </div>
 
@@ -430,7 +430,7 @@ export default function ChartOfAccountsView() {
             }}
             className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500/30 text-white px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-lg"
           >
-            {showForm ? 'Cancel' : 'New Account / Category'}
+            {showForm ? 'Cancel' : 'New Ledger Account'}
           </button>
         </div>
       </div>
@@ -440,11 +440,11 @@ export default function ChartOfAccountsView() {
         <form onSubmit={handleSubmit} className="bg-zinc-900/60 p-6 rounded-2xl border border-zinc-800/80 shadow-2xl backdrop-blur-md space-y-4 animate-fadeIn">
           <h3 className="font-semibold text-zinc-100 text-sm flex items-center gap-1.5 font-display">
             <PlusCircle className="text-emerald-400" size={16} />
-            Configure New Account Category
+            Configure New Ledger Account
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Account / Category Type</label>
+              <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Ledger Account Type</label>
               <select
                 value={newType}
                 onChange={e => handleTypeChange(e.target.value as AccountType)}
@@ -500,7 +500,7 @@ export default function ChartOfAccountsView() {
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Institution (Optional)</label>
+              <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Institution (Financial Accounts Only)</label>
               <input 
                 type="text" 
                 placeholder="e.g. Chase Bank, AMEX"
@@ -510,7 +510,7 @@ export default function ChartOfAccountsView() {
               />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Account Number (Optional)</label>
+              <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Account Number (Financial Accounts Only)</label>
               <input 
                 type="text" 
                 placeholder="e.g. xxxxx1234"
@@ -520,7 +520,7 @@ export default function ChartOfAccountsView() {
               />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Routing Number (Optional)</label>
+              <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Routing Number (Financial Accounts Only)</label>
               <input 
                 type="text" 
                 placeholder="e.g. 021000021"

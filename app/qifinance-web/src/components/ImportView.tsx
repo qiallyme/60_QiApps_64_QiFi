@@ -15,6 +15,7 @@ import {
 export default function ImportView() {
   const { 
     importBatches, 
+    financialAccounts,
     accounts, 
     rules, 
     addRule, 
@@ -28,7 +29,7 @@ export default function ImportView() {
   } = useQiStore();
 
   // Ingestion Inbound State
-  const [targetAccountId, setTargetAccountId] = useState('assets-checking');
+  const [targetAccountId, setTargetAccountId] = useState('fa-square-checking');
   const [rawText, setRawText] = useState('');
   const [fileName, setFileName] = useState('manual_copy_paste.csv');
   const [dragActive, setDragActive] = useState(false);
@@ -77,6 +78,15 @@ export default function ImportView() {
     matchingRowIds: string[];
   } | null>(null);
 
+  const financialAccountOptions = useMemo(() => financialAccounts.map(account => ({
+    id: account.id,
+    code: account.accountMask || account.accountKind,
+    name: account.name,
+    type: ['credit_card', 'loan'].includes(account.accountKind) ? 'liability' as const : 'asset' as const,
+    description: account.institution || '',
+    isActive: account.isActive
+  })), [financialAccounts]);
+
   // Target fields definition - dynamically computed based on amountMode
   const targetFields = useMemo(() => {
     const baseFields = [
@@ -111,7 +121,7 @@ export default function ImportView() {
     return [
       ...baseFields,
       { id: 'counterparty', label: 'Counterparty', required: false, desc: 'Merchant name or client recipient' },
-      { id: 'accountId', label: 'Category Account', required: false, desc: 'COA account category name or code' },
+      { id: 'accountId', label: 'Ledger Account', required: false, desc: 'Existing Chart of Accounts code or name' },
       { id: 'tags', label: 'Tags', required: false, desc: 'Comma-separated labels or tags' },
       { id: 'memo', label: 'Memo', required: false, desc: 'Additional custom text comment' },
     ];
@@ -157,7 +167,7 @@ export default function ImportView() {
       `06/29/2026,06/29/2026,UBER RIDE TRP CHARGE 99,Travel,Sale,-18.25,`;
     setRawText(csvText);
     handleParseData(csvText);
-    setTargetAccountId('liabilities-chasecc');
+    setTargetAccountId('fa-chase-credit-card');
     setAmountMode('single');
     setColumnMappings({
       0: ['date'],
@@ -178,7 +188,7 @@ export default function ImportView() {
       `2026-06-23,5812,dinner with team,Me,Bistro,-34.50`;
     setRawText(csvText);
     handleParseData(csvText);
-    setTargetAccountId('assets-checking');
+    setTargetAccountId('fa-square-checking');
     setAmountMode('single');
     setColumnMappings({
       0: ['date'],
@@ -435,7 +445,7 @@ export default function ImportView() {
     } else {
       // Direct completion
       const processed = rows.map(r => {
-        let finalAccountId = 'suspense-uncategorized';
+        let finalAccountId = 'ledger-import-suspense';
         if (r.accountId) {
           const matchedAcc = accounts.find(a => 
             a.name.toLowerCase() === r.accountId.toLowerCase() || 
@@ -458,8 +468,6 @@ export default function ImportView() {
   };
 
   const handleResolveAndComplete = (shouldCreate: boolean) => {
-    const createdCatMap = new Map<string, string>();
-
     // 1. Create missing Counterparties in workspace
     if (shouldCreate) {
       missingCPList.forEach(item => {
@@ -473,27 +481,11 @@ export default function ImportView() {
           });
         }
       });
-
-      // 2. Create missing category accounts
-      missingCatList.forEach(item => {
-        if (item.checked) {
-          const cleanName = item.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const generatedId = `expense-${cleanName || 'category'}-${Date.now().toString().slice(-4)}`;
-          createdCatMap.set(item.name.toLowerCase(), generatedId);
-          addAccount({
-            id: generatedId,
-            code: item.code,
-            name: item.name,
-            type: item.type as any,
-            description: 'Category account created automatically during CSV import'
-          });
-        }
-      });
     }
 
     // 3. Map newly resolved items into rows and import
     const finalRows = pendingRowsForResolution.map(row => {
-      let finalAccountId = 'suspense-uncategorized';
+      let finalAccountId = 'ledger-import-suspense';
       if (row.accountId) {
         const matchedExisting = accounts.find(a => 
           a.name.toLowerCase() === row.accountId.toLowerCase() || 
@@ -502,8 +494,6 @@ export default function ImportView() {
         );
         if (matchedExisting) {
           finalAccountId = matchedExisting.id;
-        } else if (shouldCreate && createdCatMap.has(row.accountId.toLowerCase())) {
-          finalAccountId = createdCatMap.get(row.accountId.toLowerCase())!;
         }
       }
 
@@ -623,18 +613,18 @@ export default function ImportView() {
             Import Bank Statements
           </h2>
           <p className="text-sm text-zinc-400 font-sans mt-0.5">
-            Ingest financial feeds. Map custom headers, create missing COA items on-the-fly, and build automatic filters.
+            Ingest financial feeds. Map custom headers, preserve raw rows, and route unknown classifications to review.
           </p>
         </div>
 
         {/* ACCOUNT DESTINATION & QUICK DEMO TEMPLATES */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-950 p-4 rounded-xl border border-zinc-800/80">
           <div className="space-y-1 w-full sm:max-w-xs text-zinc-350">
-            <span className="text-[10px] uppercase font-bold text-zinc-400 font-mono tracking-wider">Target Destination Account</span>
+            <span className="text-[10px] uppercase font-bold text-zinc-400 font-mono tracking-wider">Financial Account</span>
             <SearchableAccountSelect
               value={targetAccountId}
               onChange={setTargetAccountId}
-              accounts={accounts.filter(a => ['asset', 'liability'].includes(a.type))}
+              accounts={financialAccountOptions}
               className="block w-full mt-1.5"
             />
           </div>
@@ -790,10 +780,10 @@ export default function ImportView() {
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5 font-mono">
                   <Settings size={12} className="text-emerald-400" />
-                  Missing COA Category Accounts ({missingCatList.length})
+                  Unmatched Ledger/Category Labels ({missingCatList.length})
                 </h4>
                 {missingCatList.length === 0 ? (
-                  <p className="text-[11px] text-zinc-500 italic">No missing account categories found in this batch.</p>
+                  <p className="text-[11px] text-zinc-500 italic">No unmatched labels found in this batch.</p>
                 ) : (
                   <div className="bg-zinc-900/40 border border-zinc-850 rounded-xl p-3 max-h-64 overflow-y-auto space-y-2.5">
                     {missingCatList.map((cat, idx) => (
@@ -812,7 +802,7 @@ export default function ImportView() {
                             />
                             <span className="font-semibold">{cat.name}</span>
                           </label>
-                          <span className="text-[9px] font-mono text-zinc-500 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">Auto-coded</span>
+                          <span className="text-[9px] font-mono text-zinc-500 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">Review</span>
                         </div>
 
                         {cat.checked && (

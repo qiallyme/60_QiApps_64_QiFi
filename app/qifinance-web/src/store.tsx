@@ -5,13 +5,15 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
-  Account, Transaction, LedgerEntry, ImportBatch, RawImportedRow, 
+  Account, FinancialAccount, Transaction, LedgerEntry, ImportBatch, RawImportedRow, 
   Rule, Attachment, Statement, RecurringSchedule,
   Counterparty, AccountabilityObligation
 } from './types';
 import { QiFinanceAuthError, qifinanceApi } from './lib/qifinanceApi';
 
 interface QiContextType {
+  financialAccounts: FinancialAccount[];
+  ledgerAccounts: Account[];
   accounts: Account[];
   transactions: Transaction[];
   ledgerEntries: LedgerEntry[];
@@ -106,16 +108,20 @@ const QiContext = createContext<QiContextType | undefined>(undefined);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function mapApiTransaction(tx: any): Transaction {
+  const transactionDate = tx.transaction_date || tx.date;
+  const description = tx.description_clean || tx.description;
+  const financialAccountId = tx.financial_account_id || tx.source_account_id;
   return {
     id: tx.id,
-    date: tx.date,
-    description: tx.description,
-    rawDescription: tx.raw_description || tx.description,
+    date: transactionDate,
+    description,
+    rawDescription: tx.description_raw || tx.raw_description || description,
     amount: Number(tx.amount),
-    sourceAccountId: tx.source_account_id,
+    sourceAccountId: financialAccountId,
+    financialAccountId,
+    categoryId: tx.category_id,
     tags: tx.tags || [],
     counterparty: tx.counterparty || '',
-    reconciliationId: tx.reconciliation_id,
     importBatchId: tx.import_batch_id,
     createdAt: tx.created_at
   };
@@ -127,23 +133,39 @@ function mapApiAccount(account: any): Account {
     code: account.code,
     name: account.name,
     type: account.type as any,
+    normalBalance: account.normal_balance,
     description: account.description || '',
     isActive: account.is_active ?? true,
-    accountNumber: account.account_number || '',
-    routingNumber: account.routing_number || '',
-    institution: account.institution || '',
-    parentAccountId: account.parent_account_id || null
+    parentLedgerAccountId: account.parent_ledger_account_id || null,
+    parentAccountId: account.parent_ledger_account_id || null
+  };
+}
+
+function mapApiFinancialAccount(account: any): FinancialAccount {
+  return {
+    id: account.id,
+    name: account.name,
+    institution: account.institution,
+    accountMask: account.account_mask,
+    accountKind: account.account_kind || 'other',
+    sourceProvider: account.source_provider,
+    currentBalance: Number(account.current_balance || 0),
+    currency: account.currency || 'USD',
+    defaultLedgerAccountId: account.default_ledger_account_id,
+    isActive: account.is_active ?? true
   };
 }
 
 function mapApiLedgerEntry(entry: any): LedgerEntry {
   return {
     id: entry.id,
-    transactionId: entry.transaction_id,
-    accountId: entry.account_id,
+    transactionId: entry.transaction_id || entry.journal_entry_id,
+    journalEntryId: entry.journal_entry_id,
+    accountId: entry.account_id || entry.ledger_account_id,
+    ledgerAccountId: entry.ledger_account_id,
     debit: Number(entry.debit || 0),
     credit: Number(entry.credit || 0),
-    date: entry.date
+    date: entry.date || entry.created_at
   };
 }
 
@@ -152,8 +174,9 @@ function mapApiImportBatch(batch: any): ImportBatch {
     id: batch.id,
     createdAt: batch.created_at || batch.imported_at || new Date().toISOString(),
     fileName: batch.file_name || batch.original_filename || 'import.csv',
-    rawCount: Number(batch.raw_count ?? batch.row_count ?? 0),
-    sourceAccountId: batch.source_account_id || 'assets-checking'
+    rawCount: Number(batch.row_count ?? batch.raw_count ?? 0),
+    sourceAccountId: batch.financial_account_id || batch.source_account_id || '',
+    financialAccountId: batch.financial_account_id
   };
 }
 
@@ -161,11 +184,13 @@ function mapApiRawRow(row: any): RawImportedRow {
   return {
     id: row.id,
     importBatchId: row.import_batch_id || row.batch_id,
-    date: row.date,
+    date: row.date || row.raw_data?.date,
     description: row.description || row.raw_data?.description || '',
     amount: Number(row.amount ?? row.raw_data?.amount ?? 0),
     status: row.status || row.normalized_status || 'pending',
-    suggestedAccountId: row.suggested_account_id || row.raw_data?.suggestedAccountId,
+    suggestedAccountId: row.suggested_ledger_account_id || row.suggested_account_id || row.raw_data?.suggestedAccountId,
+    suggestedLedgerAccountId: row.suggested_ledger_account_id,
+    suggestedCategoryId: row.suggested_category_id,
     suggestedTags: row.suggested_tags || row.raw_data?.suggestedTags || [],
     suggestedCounterparty: row.suggested_counterparty || row.raw_data?.suggestedCounterparty || '',
     memo: row.memo || row.raw_data?.memo || ''
@@ -176,7 +201,7 @@ function mapApiRule(rule: any): Rule {
   return {
     id: rule.id,
     pattern: rule.pattern,
-    suggestedAccountId: rule.suggested_account_id,
+    suggestedAccountId: rule.suggested_ledger_account_id || rule.suggested_account_id,
     suggestedTags: rule.suggested_tags || [],
     suggestedCounterparty: rule.suggested_counterparty || '',
     description: rule.description || ''
@@ -203,7 +228,7 @@ function mapApiAttachment(attachment: any): Attachment {
 function mapApiStatement(statement: any): Statement {
   return {
     id: statement.id,
-    accountId: statement.account_id,
+    accountId: statement.financial_account_id || statement.account_id,
     startDate: statement.start_date,
     endDate: statement.end_date,
     openingBalance: Number(statement.opening_balance || 0),
@@ -218,8 +243,8 @@ function mapApiSchedule(schedule: any): RecurringSchedule {
     id: schedule.id,
     name: schedule.name,
     amount: Number(schedule.amount || 0),
-    accountId: schedule.account_id,
-    sourceAccountId: schedule.source_account_id,
+    accountId: schedule.ledger_account_id || schedule.account_id,
+    sourceAccountId: schedule.financial_account_id || schedule.source_account_id,
     frequency: schedule.frequency,
     nextDueDate: schedule.next_due_date,
     tags: schedule.tags || [],
@@ -321,6 +346,7 @@ const DEFAULT_SCHEDULES: RecurringSchedule[] = [
 ];
 
 export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [financialAccounts, setFinancialAccounts] = useState<FinancialAccount[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
@@ -335,9 +361,11 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   const applyApiState = (apiState: any) => {
     const mappedTxs = (apiState.transactions || []).map(mapApiTransaction);
-    const mappedLedgerEntries = (apiState.ledgerEntries || []).map(mapApiLedgerEntry);
+    const mappedLedgerEntries = (apiState.journalLines || apiState.ledgerEntries || []).map(mapApiLedgerEntry);
+    const mappedLedgerAccounts = (apiState.ledgerAccounts || apiState.accounts || []).map(mapApiAccount);
 
-    setAccounts((apiState.accounts || []).map(mapApiAccount));
+    setFinancialAccounts((apiState.financialAccounts || []).map(mapApiFinancialAccount));
+    setAccounts(mappedLedgerAccounts);
     setTransactions(mappedTxs);
     setLedgerEntries(mappedLedgerEntries.length > 0 ? mappedLedgerEntries : buildLedgerEntriesFromTransactions(mappedTxs));
     setImportBatches((apiState.importBatches || []).map(mapApiImportBatch));
@@ -374,6 +402,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           if (!apiAccounts || apiAccounts.length === 0) throw new Error("No accounts found in database");
 
           const mappedTxs = apiTransactions.map(mapApiTransaction);
+          setFinancialAccounts([]);
           setAccounts(apiAccounts.map(mapApiAccount));
           setTransactions(mappedTxs);
           setLedgerEntries(buildLedgerEntriesFromTransactions(mappedTxs));
@@ -394,6 +423,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           return;
         }
         console.warn("Could not load from API worker, falling back to localStorage:", err);
+        const savedFinancialAccounts = localStorage.getItem('qi_financial_accounts');
         const savedAccounts = localStorage.getItem('qi_accounts');
         const savedTransactions = localStorage.getItem('qi_transactions');
         const savedLedgers = localStorage.getItem('qi_ledgers');
@@ -407,6 +437,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         const savedObligations = localStorage.getItem('qi_obligations');
 
         if (savedAccounts) {
+          setFinancialAccounts(savedFinancialAccounts ? JSON.parse(savedFinancialAccounts) : []);
           setAccounts(JSON.parse(savedAccounts));
           setTransactions(savedTransactions ? JSON.parse(savedTransactions) : []);
           setLedgerEntries(savedLedgers ? JSON.parse(savedLedgers) : []);
@@ -441,6 +472,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     newObligations: AccountabilityObligation[] = obligations
   ) => {
     localStorage.setItem('qi_accounts', JSON.stringify(newAccs));
+    localStorage.setItem('qi_financial_accounts', JSON.stringify(financialAccounts));
     localStorage.setItem('qi_transactions', JSON.stringify(newTxs));
     localStorage.setItem('qi_ledgers', JSON.stringify(newLedg));
     localStorage.setItem('qi_batches', JSON.stringify(newBatches));
@@ -1512,6 +1544,8 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   return (
     <QiContext.Provider value={{
+      financialAccounts,
+      ledgerAccounts: accounts,
       accounts,
       transactions,
       ledgerEntries,

@@ -7,7 +7,7 @@ export interface Env {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
   QIFI_API_TOKEN: string;
-  OPENAI_API_KEY: string;
+  OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
 }
 
@@ -22,7 +22,9 @@ interface AssistantActionResult {
 }
 
 interface AssistantContext {
-  accounts: JsonRecord[];
+  financialAccounts: JsonRecord[];
+  ledgerAccounts: JsonRecord[];
+  categories: JsonRecord[];
   counterparties: JsonRecord[];
   rules: JsonRecord[];
 }
@@ -39,45 +41,68 @@ const DOMAIN_ROUTES: Record<string, {
   mapInput?: (body: JsonRecord, isUpdate?: boolean) => JsonRecord;
 }> = {
   rules: {
-    table: "finance_transaction_rules",
+    table: "classification_rules",
     order: "created_at.desc",
     mapInput: mapRuleInput
   },
   attachments: {
-    table: "finance_attachments",
+    table: "attachments",
     order: "uploaded_at.desc",
     mapInput: mapAttachmentInput
   },
   statements: {
-    table: "finance_statements",
+    table: "statements",
     order: "end_date.desc",
     mapInput: mapStatementInput
   },
   schedules: {
-    table: "finance_recurring_schedules",
+    table: "recurring_transactions",
     order: "next_due_date.asc",
     mapInput: mapScheduleInput
   },
   counterparties: {
-    table: "finance_counterparties",
+    table: "counterparties",
     order: "name.asc",
     mapInput: mapCounterpartyInput
   },
   obligations: {
-    table: "finance_obligations",
+    table: "obligations",
     order: "created_at.desc",
     mapInput: mapObligationInput
   },
   "ledger-entries": {
-    table: "finance_ledger_entries",
-    order: "date.desc"
+    table: "journal_lines",
+    order: "created_at.desc"
   },
   "import-batches": {
-    table: "finance_import_batches",
+    table: "import_batches",
     order: "created_at.desc"
   },
   "raw-rows": {
-    table: "finance_import_raw_rows",
+    table: "import_rows_raw",
+    order: "created_at.desc"
+  },
+  "financial-accounts": {
+    table: "financial_accounts",
+    order: "name.asc",
+    mapInput: mapFinancialAccountInput
+  },
+  "ledger-accounts": {
+    table: "ledger_accounts",
+    order: "code.asc",
+    mapInput: mapLedgerAccountInput
+  },
+  "tax-mappings": {
+    table: "tax_mappings",
+    order: "tax_form.asc",
+    mapInput: mapTaxMappingInput
+  },
+  "journal-entries": {
+    table: "journal_entries",
+    order: "entry_date.desc"
+  },
+  "journal-lines": {
+    table: "journal_lines",
     order: "created_at.desc"
   }
 };
@@ -114,7 +139,7 @@ Return JSON only with this shape:
 }
 
 Allowed action types are create_account, create_counterparty, create_obligation, create_schedule, create_rule, and create_transaction.
-Only create records. For requests that update, delete, reconcile, or are ambiguous, return no actions and explain what confirmation or detail is needed in summary.
+Only create records. Treat create_account as a real-world financial account, not a chart-of-accounts ledger account. For requests that update, delete, reconcile, or are ambiguous, return no actions and explain what confirmation or detail is needed in summary.
 
 Account rules:
 - Checking and savings accounts are accountType "asset".
@@ -122,6 +147,7 @@ Account rules:
 - Normalize Chase, JP Morgan, JPMorgan, and J.P. Morgan to institution "JPMorgan Chase".
 - If the user gives only a last four identifier, put that exact identifier in accountNumber and include it in the account name.
 - Use plain names such as "JPMorgan Chase Checking 9021" and "JPMorgan Chase Savings 1002".
+- Use accountKind values checking, savings, credit_card, loan, wallet, cash, platform, or other.
 
 Transaction rules:
 - Amounts are positive for money entering the source account and negative for money leaving it.
@@ -367,10 +393,12 @@ async function selectAll(env: Env, table: string, order: string): Promise<any[]>
 
 async function handleGetState(env: Env): Promise<Response> {
   const [
-    accounts,
+    financialAccounts,
+    ledgerAccounts,
     categories,
     transactions,
-    ledgerEntries,
+    journalEntries,
+    journalLines,
     importBatches,
     rawRows,
     rules,
@@ -380,25 +408,31 @@ async function handleGetState(env: Env): Promise<Response> {
     counterparties,
     obligations
   ] = await Promise.all([
-    selectAll(env, "finance_accounts", "code.asc"),
-    selectAll(env, "finance_categories", "code.asc"),
-    selectAll(env, "finance_master_transactions", "date.desc"),
-    selectAll(env, "finance_ledger_entries", "date.desc"),
-    selectAll(env, "finance_import_batches", "created_at.desc"),
-    selectAll(env, "finance_import_raw_rows", "created_at.desc"),
-    selectAll(env, "finance_transaction_rules", "created_at.desc"),
-    selectAll(env, "finance_attachments", "uploaded_at.desc"),
-    selectAll(env, "finance_statements", "end_date.desc"),
-    selectAll(env, "finance_recurring_schedules", "next_due_date.asc"),
-    selectAll(env, "finance_counterparties", "name.asc"),
-    selectAll(env, "finance_obligations", "created_at.desc")
+    selectAll(env, "financial_accounts", "name.asc"),
+    selectAll(env, "ledger_accounts", "code.asc"),
+    selectAll(env, "categories", "name.asc"),
+    selectAll(env, "transactions", "transaction_date.desc"),
+    selectAll(env, "journal_entries", "entry_date.desc"),
+    selectAll(env, "journal_lines", "created_at.desc"),
+    selectAll(env, "import_batches", "created_at.desc"),
+    selectAll(env, "import_rows_raw", "created_at.desc"),
+    selectAll(env, "classification_rules", "created_at.desc"),
+    selectAll(env, "attachments", "uploaded_at.desc"),
+    selectAll(env, "statements", "end_date.desc"),
+    selectAll(env, "recurring_transactions", "next_due_date.asc"),
+    selectAll(env, "counterparties", "name.asc"),
+    selectAll(env, "obligations", "created_at.desc")
   ]);
 
   return json({
-    accounts,
+    financialAccounts,
+    ledgerAccounts,
+    accounts: ledgerAccounts,
     categories,
     transactions,
-    ledgerEntries,
+    journalEntries,
+    journalLines,
+    ledgerEntries: journalLines.map(mapJournalLineForLegacyClient),
     importBatches,
     rawRows,
     rules,
@@ -472,20 +506,35 @@ async function handleAssistant(request: Request, env: Env): Promise<Response> {
 }
 
 async function buildAssistantContext(env: Env): Promise<AssistantContext> {
-  const [accounts, counterparties, rules] = await Promise.all([
-    selectAll(env, "finance_accounts", "code.asc"),
-    selectAll(env, "finance_counterparties", "name.asc"),
-    selectAll(env, "finance_transaction_rules", "created_at.desc")
+  const [financialAccounts, ledgerAccounts, categories, counterparties, rules] = await Promise.all([
+    selectAll(env, "financial_accounts", "name.asc"),
+    selectAll(env, "ledger_accounts", "code.asc"),
+    selectAll(env, "categories", "name.asc"),
+    selectAll(env, "counterparties", "name.asc"),
+    selectAll(env, "classification_rules", "created_at.desc")
   ]);
 
   return {
-    accounts: accounts.map((account) => ({
+    financialAccounts: financialAccounts.map((account) => ({
+      id: account.id,
+      name: account.name,
+      institution: account.institution,
+      account_mask: account.account_mask,
+      account_kind: account.account_kind,
+      default_ledger_account_id: account.default_ledger_account_id
+    })),
+    ledgerAccounts: ledgerAccounts.map((account) => ({
       id: account.id,
       code: account.code,
       name: account.name,
       type: account.type,
-      institution: account.institution,
-      parent_account_id: account.parent_account_id
+      normal_balance: account.normal_balance,
+      parent_ledger_account_id: account.parent_ledger_account_id
+    })),
+    categories: categories.map((category) => ({
+      id: category.id,
+      name: category.name,
+      default_ledger_account_id: category.default_ledger_account_id
     })),
     counterparties: counterparties.map((counterparty) => ({
       id: counterparty.id,
@@ -496,7 +545,8 @@ async function buildAssistantContext(env: Env): Promise<AssistantContext> {
     rules: rules.map((rule) => ({
       id: rule.id,
       pattern: rule.pattern,
-      suggested_account_id: rule.suggested_account_id,
+      suggested_category_id: rule.suggested_category_id,
+      suggested_ledger_account_id: rule.suggested_ledger_account_id,
       suggested_counterparty: rule.suggested_counterparty
     }))
   };
@@ -585,11 +635,11 @@ async function createAssistantAccount(action: JsonRecord, env: Env, context: Ass
     };
   }
 
-  const duplicate = context.accounts.find((account) => {
+  const duplicate = context.financialAccounts.find((account) => {
     const sameName = normalizeText(account.name).toLowerCase() === name.toLowerCase();
     const sameNumber = accountNumber &&
       normalizeText(account.institution).toLowerCase() === institution.toLowerCase() &&
-      normalizeText(account.account_number ?? account.accountNumber) === accountNumber;
+      normalizeText(account.account_mask ?? account.accountNumber) === accountNumber;
     return sameName || sameNumber;
   });
 
@@ -602,40 +652,31 @@ async function createAssistantAccount(action: JsonRecord, env: Env, context: Ass
     };
   }
 
-  const requestedCode = normalizeText(action.code);
-  if (requestedCode && context.accounts.some((account) => normalizeText(account.code) === requestedCode)) {
-    return {
-      type: "create_account",
-      status: "error",
-      message: `Account code already exists: ${requestedCode}`
-    };
-  }
-
+  const defaultLedgerAccountId = pickDefaultLedgerAccount(context, accountKind, accountType);
   const record = {
     id: uniqueId(
-      normalizeId(action.id) || buildAccountId(accountType, institution, accountKind, accountNumber, name),
-      context.accounts.map((account) => account.id)
+      normalizeId(action.id) || buildAccountId("fa", institution, accountKind, accountNumber, name),
+      context.financialAccounts.map((account) => account.id)
     ),
-    code: requestedCode || nextAccountCode(context.accounts, accountType),
     name,
-    type: accountType,
-    description: normalizeText(action.description) || `${name} account created by QiFi Assistant.`,
-    accountNumber,
-    routingNumber: normalizeAccountNumber(action.routingNumber ?? action.routing_number),
+    accountKind: normalizeFinancialAccountKind(accountKind),
+    accountMask: accountNumber,
     institution,
-    parentAccountId: normalizeText(action.parentAccountId ?? action.parent_account_id) || null,
+    sourceProvider: "assistant",
+    currentBalance: Number(action.currentBalance ?? action.current_balance ?? 0),
+    currency: normalizeText(action.currency) || "USD",
+    defaultLedgerAccountId,
     isActive: true
   };
 
-  const created = await insertAssistantRecord(env, "finance_accounts", mapAccountInput(record, false), "/api/finance/accounts");
-  context.accounts.push({
+  const created = await insertAssistantRecord(env, "financial_accounts", mapFinancialAccountInput(record, false), "/api/finance/financial-accounts");
+  context.financialAccounts.push({
     id: created.id,
-    code: created.code,
     name: created.name,
-    type: created.type,
     institution: created.institution,
-    account_number: created.account_number,
-    parent_account_id: created.parent_account_id
+    account_mask: created.account_mask,
+    account_kind: created.account_kind,
+    default_ledger_account_id: created.default_ledger_account_id
   });
 
   return {
@@ -660,7 +701,7 @@ async function createAssistantCounterparty(action: JsonRecord, env: Env, context
     };
   }
 
-  const created = await insertAssistantRecord(env, "finance_counterparties", mapCounterpartyInput({
+  const created = await insertAssistantRecord(env, "counterparties", mapCounterpartyInput({
     ...action,
     id: normalizeId(action.id) || `cp-${slugify(name)}`,
     name
@@ -698,7 +739,7 @@ async function createAssistantObligation(action: JsonRecord, env: Env, context: 
     return assistantError("create_obligation", `Counterparty not found: ${counterpartyId}`);
   }
 
-  const created = await insertAssistantRecord(env, "finance_obligations", mapObligationInput({
+  const created = await insertAssistantRecord(env, "obligations", mapObligationInput({
     ...action,
     counterpartyId,
     amount,
@@ -717,8 +758,8 @@ async function createAssistantObligation(action: JsonRecord, env: Env, context: 
 async function createAssistantSchedule(action: JsonRecord, env: Env, context: AssistantContext): Promise<AssistantActionResult> {
   const name = normalizeText(action.name);
   const amount = Number(action.amount);
-  const accountId = normalizeText(action.accountId ?? action.account_id ?? action.categoryAccountId ?? action.category_account_id);
-  const sourceAccountId = normalizeText(action.sourceAccountId ?? action.source_account_id);
+  const accountId = normalizeText(action.ledgerAccountId ?? action.ledger_account_id ?? action.accountId ?? action.account_id ?? action.categoryAccountId ?? action.category_account_id);
+  const sourceAccountId = normalizeText(action.financialAccountId ?? action.financial_account_id ?? action.sourceAccountId ?? action.source_account_id);
   const frequency = normalizeText(action.frequency);
   const nextDueDate = normalizeText(action.nextDueDate ?? action.next_due_date);
 
@@ -731,10 +772,10 @@ async function createAssistantSchedule(action: JsonRecord, env: Env, context: As
     ["nextDueDate", nextDueDate]
   ]);
   if (missing.length > 0) return assistantError("create_schedule", `Missing schedule fields: ${missing.join(", ")}`);
-  const missingAccounts = [accountId, sourceAccountId].filter((id) => !accountExists(context, id));
-  if (missingAccounts.length > 0) return assistantError("create_schedule", `Account not found: ${missingAccounts.join(", ")}`);
+  if (!ledgerAccountExists(context, accountId)) return assistantError("create_schedule", `Ledger account not found: ${accountId}`);
+  if (!financialAccountExists(context, sourceAccountId)) return assistantError("create_schedule", `Financial account not found: ${sourceAccountId}`);
 
-  const created = await insertAssistantRecord(env, "finance_recurring_schedules", mapScheduleInput({
+  const created = await insertAssistantRecord(env, "recurring_transactions", mapScheduleInput({
     ...action,
     name,
     amount,
@@ -754,13 +795,13 @@ async function createAssistantSchedule(action: JsonRecord, env: Env, context: As
 
 async function createAssistantRule(action: JsonRecord, env: Env, context: AssistantContext): Promise<AssistantActionResult> {
   const pattern = normalizeText(action.pattern);
-  const suggestedAccountId = normalizeText(action.suggestedAccountId ?? action.suggested_account_id);
+  const suggestedAccountId = normalizeText(action.suggestedLedgerAccountId ?? action.suggested_ledger_account_id ?? action.suggestedAccountId ?? action.suggested_account_id);
   const missing = missingFields([
     ["pattern", pattern],
     ["suggestedAccountId", suggestedAccountId]
   ]);
   if (missing.length > 0) return assistantError("create_rule", `Missing rule fields: ${missing.join(", ")}`);
-  if (!accountExists(context, suggestedAccountId)) return assistantError("create_rule", `Suggested account not found: ${suggestedAccountId}`);
+  if (!ledgerAccountExists(context, suggestedAccountId)) return assistantError("create_rule", `Suggested ledger account not found: ${suggestedAccountId}`);
 
   const duplicate = context.rules.find((rule) => normalizeText(rule.pattern).toLowerCase() === pattern.toLowerCase());
   if (duplicate) {
@@ -772,7 +813,7 @@ async function createAssistantRule(action: JsonRecord, env: Env, context: Assist
     };
   }
 
-  const created = await insertAssistantRecord(env, "finance_transaction_rules", mapRuleInput({
+  const created = await insertAssistantRecord(env, "classification_rules", mapRuleInput({
     ...action,
     pattern,
     suggestedAccountId
@@ -781,7 +822,7 @@ async function createAssistantRule(action: JsonRecord, env: Env, context: Assist
   context.rules.push({
     id: created.id,
     pattern: created.pattern,
-    suggested_account_id: created.suggested_account_id,
+    suggested_ledger_account_id: created.suggested_ledger_account_id,
     suggested_counterparty: created.suggested_counterparty
   });
 
@@ -797,8 +838,8 @@ async function createAssistantTransaction(action: JsonRecord, env: Env, context:
   const date = normalizeText(action.date);
   const description = normalizeText(action.description);
   const amount = Number(action.amount);
-  const sourceAccountId = normalizeText(action.sourceAccountId ?? action.source_account_id);
-  const categoryAccountId = normalizeText(action.categoryAccountId ?? action.category_account_id ?? action.accountId ?? action.account_id);
+  const sourceAccountId = normalizeText(action.financialAccountId ?? action.financial_account_id ?? action.sourceAccountId ?? action.source_account_id);
+  const categoryAccountId = normalizeText(action.ledgerAccountId ?? action.ledger_account_id ?? action.categoryAccountId ?? action.category_account_id ?? action.accountId ?? action.account_id);
 
   const missing = missingFields([
     ["date", date],
@@ -807,9 +848,9 @@ async function createAssistantTransaction(action: JsonRecord, env: Env, context:
     ["sourceAccountId", sourceAccountId]
   ]);
   if (missing.length > 0) return assistantError("create_transaction", `Missing transaction fields: ${missing.join(", ")}`);
-  if (!accountExists(context, sourceAccountId)) return assistantError("create_transaction", `Source account not found: ${sourceAccountId}`);
-  if (categoryAccountId && !accountExists(context, categoryAccountId)) {
-    return assistantError("create_transaction", `Category account not found: ${categoryAccountId}`);
+  if (!financialAccountExists(context, sourceAccountId)) return assistantError("create_transaction", `Financial account not found: ${sourceAccountId}`);
+  if (categoryAccountId && !ledgerAccountExists(context, categoryAccountId)) {
+    return assistantError("create_transaction", `Ledger account not found: ${categoryAccountId}`);
   }
 
   const txToInsert = mapTransactionInput({
@@ -818,12 +859,12 @@ async function createAssistantTransaction(action: JsonRecord, env: Env, context:
     date,
     description,
     amount,
-    sourceAccountId,
-    ledgerStatus: categoryAccountId ? "posted" : "not_posted"
+    financialAccountId: sourceAccountId,
+    journalStatus: categoryAccountId ? "draft" : "not_posted"
   }, false);
 
-  const created = await insertAssistantRecord(env, "finance_master_transactions", txToInsert, "/api/finance/transactions");
-  if (categoryAccountId) await replaceLedgerEntries(env, created, categoryAccountId);
+  const created = await insertAssistantRecord(env, "transactions", txToInsert, "/api/finance/transactions");
+  if (categoryAccountId) await replaceJournalEntries(env, created, categoryAccountId);
 
   return {
     type: "create_transaction",
@@ -854,8 +895,27 @@ function assistantError(type: string, message: string): AssistantActionResult {
   return { type, status: "error", message };
 }
 
-function accountExists(context: AssistantContext, id: string): boolean {
-  return context.accounts.some((account) => account.id === id);
+function financialAccountExists(context: AssistantContext, id: string): boolean {
+  return context.financialAccounts.some((account) => account.id === id);
+}
+
+function ledgerAccountExists(context: AssistantContext, id: string): boolean {
+  return context.ledgerAccounts.some((account) => account.id === id);
+}
+
+function pickDefaultLedgerAccount(context: AssistantContext, accountKind: string, accountType: string): string | null {
+  const kind = normalizeFinancialAccountKind(accountKind);
+  const preferredByKind: Record<string, string> = {
+    cash: "ledger-cash-on-hand",
+    checking: "ledger-bank-accounts",
+    savings: "ledger-bank-accounts",
+    wallet: "ledger-bank-accounts",
+    platform: "ledger-bank-accounts",
+    credit_card: "ledger-credit-cards-payable",
+    loan: "ledger-loans-payable"
+  };
+  const preferred = preferredByKind[kind] || (accountType === "liability" ? "ledger-credit-cards-payable" : "ledger-bank-accounts");
+  return ledgerAccountExists(context, preferred) ? preferred : null;
 }
 
 function missingFields(fields: [string, any][]): string[] {
@@ -885,6 +945,18 @@ function normalizeAccountKind(value: any): string {
   if (text.includes("loan")) return "loan";
   if (text.includes("cash")) return "cash";
   return normalizeText(value);
+}
+
+function normalizeFinancialAccountKind(value: any): string {
+  const text = normalizeText(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (text.includes("checking")) return "checking";
+  if (text.includes("saving")) return "savings";
+  if (text.includes("credit")) return "credit_card";
+  if (text.includes("loan")) return "loan";
+  if (text.includes("wallet")) return "wallet";
+  if (text.includes("cash")) return "cash";
+  if (text.includes("platform")) return "platform";
+  return ["checking", "savings", "credit_card", "loan", "wallet", "cash", "platform", "other"].includes(text) ? text : "other";
 }
 
 function normalizeInstitution(value: any, fallbackText = ""): string {
@@ -976,6 +1048,24 @@ function normalizeText(value: any): string {
   return String(value).trim();
 }
 
+function inferNormalBalance(accountType: any): string {
+  return ["asset", "expense", "clearing", "suspense"].includes(normalizeText(accountType)) ? "debit" : "credit";
+}
+
+function normalizeUuidOrNull(value: any): string | null {
+  const text = normalizeText(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text) ? text : null;
+}
+
+function mapJournalLineForLegacyClient(line: JsonRecord): JsonRecord {
+  return {
+    ...line,
+    transaction_id: line.transaction_id ?? line.journal_entry_id,
+    account_id: line.ledger_account_id,
+    date: line.date ?? line.created_at
+  };
+}
+
 function toStringArray(value: any): string[] {
   return Array.isArray(value) ? value.map(normalizeText).filter(Boolean) : [];
 }
@@ -1039,18 +1129,18 @@ async function handleDomainRoute(domain: string, id: string | undefined, request
 }
 
 async function handleGetAccounts(env: Env): Promise<Response> {
-  return json(await selectAll(env, "finance_accounts", "code.asc"));
+  return json(await selectAll(env, "ledger_accounts", "code.asc"));
 }
 
 async function handleGetCategories(env: Env): Promise<Response> {
-  return json(await selectAll(env, "finance_categories", "code.asc"));
+  return json(await selectAll(env, "categories", "name.asc"));
 }
 
 async function handleCreateAccount(request: Request, env: Env): Promise<Response> {
   const body = await request.json() as JsonRecord;
-  const res = await supabaseFetch(env, "/finance_accounts", {
+  const res = await supabaseFetch(env, "/ledger_accounts", {
     method: "POST",
-    body: JSON.stringify(mapAccountInput(body, false)),
+    body: JSON.stringify(mapLedgerAccountInput(body, false)),
     headers: { "Prefer": "return=representation" }
   });
   if (!res.ok) return await handleSupabaseError(res, "/api/finance/accounts");
@@ -1060,9 +1150,9 @@ async function handleCreateAccount(request: Request, env: Env): Promise<Response
 
 async function handleUpdateAccount(id: string, request: Request, env: Env): Promise<Response> {
   const body = await request.json() as JsonRecord;
-  const res = await supabaseFetch(env, `/finance_accounts?id=eq.${filterValue(id)}`, {
+  const res = await supabaseFetch(env, `/ledger_accounts?id=eq.${filterValue(id)}`, {
     method: "PATCH",
-    body: JSON.stringify(mapAccountInput(body, true)),
+    body: JSON.stringify(mapLedgerAccountInput(body, true)),
     headers: { "Prefer": "return=representation" }
   });
   if (!res.ok) return await handleSupabaseError(res, "/api/finance/accounts/:id");
@@ -1072,7 +1162,7 @@ async function handleUpdateAccount(id: string, request: Request, env: Env): Prom
 }
 
 async function handleDeleteAccount(id: string, env: Env): Promise<Response> {
-  const res = await supabaseFetch(env, `/finance_accounts?id=eq.${filterValue(id)}`, {
+  const res = await supabaseFetch(env, `/ledger_accounts?id=eq.${filterValue(id)}`, {
     method: "PATCH",
     body: JSON.stringify({ is_active: false, updated_at: new Date().toISOString() }),
     headers: { "Prefer": "return=representation" }
@@ -1085,15 +1175,9 @@ async function handleDeleteAccount(id: string, env: Env): Promise<Response> {
 
 async function handleCreateCategory(request: Request, env: Env): Promise<Response> {
   const body = await request.json() as JsonRecord;
-  const res = await supabaseFetch(env, "/finance_categories", {
+  const res = await supabaseFetch(env, "/categories", {
     method: "POST",
-    body: JSON.stringify({
-      id: body.id,
-      code: body.code,
-      name: body.name,
-      description: body.description,
-      is_active: body.isActive ?? body.is_active ?? true
-    }),
+    body: JSON.stringify(mapCategoryInput(body, false)),
     headers: { "Prefer": "return=representation" }
   });
   if (!res.ok) return await handleSupabaseError(res, "/api/finance/categories");
@@ -1108,14 +1192,14 @@ async function handleGetTransactions(request: Request, env: Env): Promise<Respon
 
   const res = await supabaseFetch(
     env,
-    `/finance_master_transactions?select=*&order=date.desc&limit=${limit}&offset=${offset}`
+    `/transactions?select=*&order=transaction_date.desc&limit=${limit}&offset=${offset}`
   );
   if (!res.ok) return await handleSupabaseError(res, "/api/finance/transactions");
   return json(await res.json());
 }
 
 async function handleGetTransactionById(id: string, env: Env): Promise<Response> {
-  const res = await supabaseFetch(env, `/finance_master_transactions?id=eq.${filterValue(id)}&select=*`);
+  const res = await supabaseFetch(env, `/transactions?id=eq.${filterValue(id)}&select=*`);
   if (!res.ok) return await handleSupabaseError(res, "/api/finance/transactions/:id");
   const data = await res.json() as any[];
   if (data.length === 0) return json({ error: "Transaction not found" }, 404);
@@ -1133,12 +1217,12 @@ async function handleCreateTransaction(request: Request, env: Env): Promise<Resp
     }, 400);
   }
 
-  const sourceAccountId = body.sourceAccountId ?? body.source_account_id;
+  const sourceAccountId = body.financialAccountId ?? body.financial_account_id ?? body.sourceAccountId ?? body.source_account_id;
   const missingFields = [
     ["date", body.date ?? body.transaction_date],
     ["description", body.description ?? body.description_clean],
     ["amount", body.amount],
-    ["sourceAccountId", sourceAccountId]
+    ["financialAccountId", sourceAccountId]
   ].filter(([, value]) => value === undefined || value === null || value === "");
 
   if (missingFields.length > 0) {
@@ -1149,11 +1233,11 @@ async function handleCreateTransaction(request: Request, env: Env): Promise<Resp
     }, 400);
   }
 
-  const categoryAccountId = body.categoryAccountId ?? body.category_account_id;
+  const categoryAccountId = body.ledgerAccountId ?? body.ledger_account_id ?? body.categoryAccountId ?? body.category_account_id;
   const txToInsert = mapTransactionInput(body, false);
-  txToInsert.ledger_status = categoryAccountId ? "posted" : txToInsert.ledger_status;
+  txToInsert.journal_status = categoryAccountId ? "draft" : txToInsert.journal_status;
 
-  const res = await supabaseFetch(env, "/finance_master_transactions", {
+  const res = await supabaseFetch(env, "/transactions", {
     method: "POST",
     body: JSON.stringify(txToInsert),
     headers: { "Prefer": "return=representation" }
@@ -1163,7 +1247,7 @@ async function handleCreateTransaction(request: Request, env: Env): Promise<Resp
   const created = data[0];
 
   if (categoryAccountId) {
-    await replaceLedgerEntries(env, created, categoryAccountId);
+    await replaceJournalEntries(env, created, categoryAccountId);
   }
 
   return json(created);
@@ -1171,10 +1255,10 @@ async function handleCreateTransaction(request: Request, env: Env): Promise<Resp
 
 async function handleUpdateTransaction(id: string, request: Request, env: Env): Promise<Response> {
   const body = await request.json() as JsonRecord;
-  const categoryAccountId = body.categoryAccountId ?? body.category_account_id;
+  const categoryAccountId = body.ledgerAccountId ?? body.ledger_account_id ?? body.categoryAccountId ?? body.category_account_id;
   const txUpdates = mapTransactionInput(body, true);
 
-  const res = await supabaseFetch(env, `/finance_master_transactions?id=eq.${filterValue(id)}`, {
+  const res = await supabaseFetch(env, `/transactions?id=eq.${filterValue(id)}`, {
     method: "PATCH",
     body: JSON.stringify(txUpdates),
     headers: { "Prefer": "return=representation" }
@@ -1185,14 +1269,14 @@ async function handleUpdateTransaction(id: string, request: Request, env: Env): 
   if (data.length === 0) return json({ error: "Transaction not found to update" }, 404);
 
   if (categoryAccountId) {
-    await replaceLedgerEntries(env, data[0], categoryAccountId);
+    await replaceJournalEntries(env, data[0], categoryAccountId);
   }
 
   return json(data[0]);
 }
 
 async function handleDeleteTransaction(id: string, env: Env): Promise<Response> {
-  const res = await supabaseFetch(env, `/finance_master_transactions?id=eq.${filterValue(id)}`, {
+  const res = await supabaseFetch(env, `/transactions?id=eq.${filterValue(id)}`, {
     method: "DELETE",
     headers: { "Prefer": "return=representation" }
   });
@@ -1263,13 +1347,14 @@ function normalizeMerchantName(rawDesc: string): string {
     .join(" ");
 }
 
-function runCategorizationHeuristics(rawDesc: string, rules: any[]): { accountId: string; tags: string[]; counterparty: string; confidence: number } {
+function runCategorizationHeuristics(rawDesc: string, rules: any[]): { ledgerAccountId: string; categoryId: string | null; tags: string[]; counterparty: string; confidence: number } {
   const cleanDesc = rawDesc.toLowerCase();
 
   for (const rule of rules) {
     if (cleanDesc.includes(rule.pattern.toLowerCase())) {
       return {
-        accountId: rule.suggested_account_id,
+        ledgerAccountId: rule.suggested_ledger_account_id || "ledger-import-suspense",
+        categoryId: rule.suggested_category_id || null,
         tags: rule.suggested_tags || [],
         counterparty: rule.suggested_counterparty || "",
         confidence: 0.95
@@ -1278,20 +1363,21 @@ function runCategorizationHeuristics(rawDesc: string, rules: any[]): { accountId
   }
 
   if (cleanDesc.includes("gas") || cleanDesc.includes("chevron") || cleanDesc.includes("shell")) {
-    return { accountId: "expenses-travel", tags: ["travel", "vehicle"], counterparty: "Fuel Gas Station", confidence: 0.85 };
+    return { ledgerAccountId: "ledger-fuel", categoryId: "cat-gas", tags: ["vehicle"], counterparty: "Fuel Gas Station", confidence: 0.85 };
   }
   if (cleanDesc.includes("dining") || cleanDesc.includes("mcdonald") || cleanDesc.includes("starbucks") || cleanDesc.includes("cafe")) {
-    return { accountId: "expenses-dining", tags: ["dining", "meals"], counterparty: "Restaurant/Cafe", confidence: 0.80 };
+    return { ledgerAccountId: "ledger-meals", categoryId: "cat-food", tags: ["meals"], counterparty: "Restaurant/Cafe", confidence: 0.80 };
   }
   if (cleanDesc.includes("lyft") || cleanDesc.includes("uber")) {
-    return { accountId: "expenses-travel", tags: ["travel", "business"], counterparty: "Rideshare", confidence: 0.90 };
+    return { ledgerAccountId: "ledger-auto-vehicle", categoryId: "cat-lyft-rental", tags: ["vehicle"], counterparty: "Rideshare", confidence: 0.90 };
   }
   if (cleanDesc.includes("transfer") || cleanDesc.includes("payment") || cleanDesc.includes("venmo")) {
-    return { accountId: "clearing-cc-payment", tags: ["transfer"], counterparty: "Cleared Fund Transfer", confidence: 0.70 };
+    return { ledgerAccountId: "ledger-transfer-clearing", categoryId: null, tags: ["transfer"], counterparty: "Cleared Fund Transfer", confidence: 0.70 };
   }
 
   return {
-    accountId: "suspense-uncategorized",
+    ledgerAccountId: "ledger-import-suspense",
+    categoryId: "cat-uncategorized",
     tags: ["uncategorized"],
     counterparty: normalizeMerchantName(rawDesc),
     confidence: 0.40
@@ -1312,11 +1398,11 @@ async function handleImportPreview(request: Request, env: Env): Promise<Response
   const parsedLines = parseCSV(csvText);
   if (parsedLines.length === 0) return json({ error: "Empty or invalid CSV file" }, 400);
 
-  const rules = await selectAll(env, "finance_transaction_rules", "created_at.desc");
-  const accounts = await selectAll(env, "finance_accounts", "code.asc");
-  const accountIds = new Set(accounts.map((a: any) => a.id));
+  const rules = await selectAll(env, "classification_rules", "created_at.desc");
+  const ledgerAccounts = await selectAll(env, "ledger_accounts", "code.asc");
+  const ledgerAccountIds = new Set(ledgerAccounts.map((a: any) => a.id));
 
-  const txRes = await supabaseFetch(env, "/finance_master_transactions?select=date,amount,description&order=date.desc&limit=1000");
+  const txRes = await supabaseFetch(env, "/transactions?select=transaction_date,amount,description_clean&order=transaction_date.desc&limit=1000");
   if (!txRes.ok) return await handleSupabaseError(txRes, "/api/finance/import/preview");
   const existingTransactions = await txRes.json() as any[];
   const dataLines = hasHeaders ? parsedLines.slice(1) : parsedLines;
@@ -1385,14 +1471,14 @@ async function handleImportPreview(request: Request, env: Env): Promise<Response
     } catch {}
 
     const suggestion = runCategorizationHeuristics(rowData.description, rules);
-    const targetAccountId = rowData.accountId || suggestion.accountId;
-    const finalAccountId = accountIds.has(targetAccountId) ? targetAccountId : "suspense-uncategorized";
+    const targetAccountId = rowData.accountId || suggestion.ledgerAccountId;
+    const finalAccountId = ledgerAccountIds.has(targetAccountId) ? targetAccountId : "ledger-import-suspense";
     const rowAbsAmount = Math.abs(rowData.amount);
     const rowTime = new Date(dateStr).getTime();
 
     const duplicates = existingTransactions.filter((tx: any) => {
       const txAbsAmount = Math.abs(Number(tx.amount));
-      const txTime = new Date(tx.date).getTime();
+      const txTime = new Date(tx.transaction_date).getTime();
       const diffDays = Math.abs(rowTime - txTime) / (1000 * 60 * 60 * 24);
       return diffDays <= 3 && Math.abs(rowAbsAmount - txAbsAmount) < 0.01;
     });
@@ -1404,6 +1490,8 @@ async function handleImportPreview(request: Request, env: Env): Promise<Response
       rawDescription: rowData.description,
       amount: rowData.amount,
       suggestedAccountId: finalAccountId,
+      suggestedLedgerAccountId: finalAccountId,
+      suggestedCategoryId: suggestion.categoryId,
       suggestedCounterparty: rowData.counterparty || suggestion.counterparty,
       suggestedTags: rowData.tags.length > 0 ? rowData.tags : suggestion.tags,
       confidence: suggestion.confidence,
@@ -1417,29 +1505,32 @@ async function handleImportPreview(request: Request, env: Env): Promise<Response
     fileName,
     rawCount: previewRows.length,
     rows: previewRows,
-    missingCategories: Array.from(new Set(previewRows.map(r => r.suggestedAccountId).filter(id => !accountIds.has(id)))),
+    missingCategories: Array.from(new Set(previewRows.map(r => r.suggestedAccountId).filter(id => !ledgerAccountIds.has(id)))),
     missingCounterparties: []
   });
 }
 
 async function handleImportCommit(request: Request, env: Env): Promise<Response> {
   const body = await request.json() as JsonRecord;
-  const { fileName, sourceAccountId, rows } = body;
+  const { fileName, rows } = body;
+  const sourceAccountId = body.financialAccountId ?? body.financial_account_id ?? body.sourceAccountId ?? body.source_account_id;
 
   if (!rows || !Array.isArray(rows)) {
     return json({ error: "Missing rows array in request body" }, 400);
   }
 
-  const batchRes = await supabaseFetch(env, "/finance_import_batches", {
+  if (!sourceAccountId) {
+    return json({ error: "Missing financialAccountId/sourceAccountId in request body" }, 400);
+  }
+
+  const batchRes = await supabaseFetch(env, "/import_batches", {
     method: "POST",
     body: JSON.stringify({
+      workspace_id: "default",
       file_name: fileName,
-      original_filename: fileName,
-      raw_count: rows.length,
       row_count: rows.length,
-      source_account_id: sourceAccountId,
-      status: "committed",
-      imported_at: new Date().toISOString()
+      financial_account_id: sourceAccountId,
+      status: "committed"
     }),
     headers: { "Prefer": "return=representation" }
   });
@@ -1449,45 +1540,46 @@ async function handleImportCommit(request: Request, env: Env): Promise<Response>
   const batchId = batchData[0].id;
 
   const rawRowsToInsert = rows.map((row: any, idx: number) => ({
+    workspace_id: "default",
     import_batch_id: batchId,
-    batch_id: batchId,
     row_number: row.index ?? idx,
     raw_data: row,
     raw_hash: `${batchId}:${row.index ?? idx}:${row.date}:${row.amount}:${row.description}`,
-    date: row.date,
-    description: row.description,
-    amount: row.amount,
-    status: row.isDuplicate ? "ignored" : "processed",
     normalized_status: row.isDuplicate ? "ignored" : "processed",
-    suggested_account_id: row.suggestedAccountId || "suspense-uncategorized",
+    suggested_category_id: row.suggestedCategoryId ?? null,
+    suggested_ledger_account_id: row.suggestedLedgerAccountId || row.suggestedAccountId || "ledger-import-suspense",
     suggested_counterparty: row.suggestedCounterparty || "",
-    suggested_tags: row.suggestedTags || [],
     memo: row.memo || ""
   }));
 
-  const rawRowsRes = await supabaseFetch(env, "/finance_import_raw_rows", {
+  const rawRowsRes = await supabaseFetch(env, "/import_rows_raw", {
     method: "POST",
-    body: JSON.stringify(rawRowsToInsert)
+    body: JSON.stringify(rawRowsToInsert),
+    headers: { "Prefer": "return=representation" }
   });
   if (!rawRowsRes.ok) return await handleSupabaseError(rawRowsRes, "/api/finance/import/commit");
+  const rawRowsData = await rawRowsRes.json() as any[];
 
   const nonDuplicateRows = rows.filter((row: any) => !row.isDuplicate);
   let txData: any[] = [];
 
   if (nonDuplicateRows.length > 0) {
     const transactionsToInsert = nonDuplicateRows.map((row: any) => {
+      const rawRow = rawRowsData.find((raw) => Number(raw.row_number) === Number(row.index ?? nonDuplicateRows.indexOf(row)));
       const record = mapTransactionInput({
         date: row.date,
         description: row.description,
         rawDescription: row.rawDescription || row.description,
         amount: row.amount,
-        sourceAccountId,
+        financialAccountId: sourceAccountId,
+        categoryId: row.suggestedCategoryId ?? null,
         tags: row.suggestedTags || [],
         counterparty: row.suggestedCounterparty || "",
         importBatchId: batchId,
+        rawRowId: rawRow?.id,
         importStatus: "imported",
         classificationStatus: row.suggestedAccountId ? "classified" : "unclassified",
-        ledgerStatus: "posted",
+        journalStatus: "draft",
         sourceMetadata: {
           raw_row_index: row.index,
           import_confidence: row.confidence
@@ -1496,7 +1588,7 @@ async function handleImportCommit(request: Request, env: Env): Promise<Response>
       return record;
     });
 
-    const txRes = await supabaseFetch(env, "/finance_master_transactions", {
+    const txRes = await supabaseFetch(env, "/transactions", {
       method: "POST",
       body: JSON.stringify(transactionsToInsert),
       headers: { "Prefer": "return=representation" }
@@ -1505,46 +1597,9 @@ async function handleImportCommit(request: Request, env: Env): Promise<Response>
     if (!txRes.ok) return await handleSupabaseError(txRes, "/api/finance/import/commit");
     txData = await txRes.json() as any[];
 
-    const ledgerEntriesToInsert: any[] = [];
     for (let i = 0; i < txData.length; i++) {
-      const tx = txData[i];
       const row = nonDuplicateRows[i];
-      const txId = tx.id;
-      const date = tx.date ?? tx.transaction_date;
-      const amount = Number(tx.amount);
-      const categoryAccountId = row.suggestedAccountId || "suspense-uncategorized";
-
-      if (!txId || !sourceAccountId || !date || !categoryAccountId || isNaN(amount)) {
-        continue;
-      }
-
-      const absoluteAmount = Math.abs(amount);
-      const isOutflow = amount < 0;
-
-      ledgerEntriesToInsert.push({
-        id: `led-${txId}-src`,
-        transaction_id: txId,
-        account_id: sourceAccountId,
-        debit: isOutflow ? 0 : absoluteAmount,
-        credit: isOutflow ? absoluteAmount : 0,
-        date
-      });
-      ledgerEntriesToInsert.push({
-        id: `led-${txId}-cat`,
-        transaction_id: txId,
-        account_id: categoryAccountId,
-        debit: isOutflow ? absoluteAmount : 0,
-        credit: isOutflow ? 0 : absoluteAmount,
-        date
-      });
-    }
-
-    if (ledgerEntriesToInsert.length > 0) {
-      const ledRes = await supabaseFetch(env, "/finance_ledger_entries", {
-        method: "POST",
-        body: JSON.stringify(ledgerEntriesToInsert)
-      });
-      if (!ledRes.ok) return await handleSupabaseError(ledRes, "/api/finance/import/commit");
+      await replaceJournalEntries(env, txData[i], row.suggestedLedgerAccountId || row.suggestedAccountId || "ledger-import-suspense");
     }
   }
 
@@ -1558,17 +1613,64 @@ async function handleImportCommit(request: Request, env: Env): Promise<Response>
 }
 
 function mapAccountInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return mapLedgerAccountInput(body, isUpdate);
+}
+
+function mapLedgerAccountInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  const accountType = body.type ?? "expense";
   return compact({
-    id: isUpdate ? undefined : body.id,
+    id: isUpdate ? undefined : (body.id ?? `ledger-${slugify(body.name ?? crypto.randomUUID())}`),
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
     code: body.code,
     name: body.name,
-    type: body.type,
-    detail_type: body.detailType ?? body.detail_type,
-    description: body.description,
-    account_number: body.accountNumber ?? body.account_number,
-    routing_number: body.routingNumber ?? body.routing_number,
-    institution: body.institution,
-    parent_account_id: body.parentAccountId ?? body.parent_account_id ?? null,
+    type: accountType,
+    normal_balance: body.normalBalance ?? body.normal_balance ?? inferNormalBalance(accountType),
+    parent_ledger_account_id: body.parentLedgerAccountId ?? body.parent_ledger_account_id ?? body.parentAccountId ?? body.parent_account_id ?? null,
+    description: body.description ?? "",
+    is_active: body.isActive ?? body.is_active,
+    updated_at: new Date().toISOString()
+  });
+}
+
+function mapFinancialAccountInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return compact({
+    id: isUpdate ? undefined : (body.id ?? `fa-${slugify(body.name ?? crypto.randomUUID())}`),
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
+    name: body.name,
+    institution: body.institution ?? null,
+    account_mask: body.accountMask ?? body.account_mask ?? body.accountNumber ?? body.account_number ?? null,
+    account_kind: body.accountKind ?? body.account_kind ?? "other",
+    source_provider: body.sourceProvider ?? body.source_provider ?? "manual",
+    current_balance: body.currentBalance ?? body.current_balance ?? 0,
+    currency: body.currency ?? "USD",
+    default_ledger_account_id: body.defaultLedgerAccountId ?? body.default_ledger_account_id ?? null,
+    is_active: body.isActive ?? body.is_active,
+    updated_at: new Date().toISOString()
+  });
+}
+
+function mapCategoryInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return compact({
+    id: isUpdate ? undefined : (body.id ?? `cat-${slugify(body.name ?? crypto.randomUUID())}`),
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
+    name: body.name,
+    description: body.description ?? "",
+    default_ledger_account_id: body.defaultLedgerAccountId ?? body.default_ledger_account_id ?? body.suggestedAccountId ?? body.suggested_account_id ?? null,
+    is_active: body.isActive ?? body.is_active,
+    updated_at: new Date().toISOString()
+  });
+}
+
+function mapTaxMappingInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return compact({
+    id: isUpdate ? undefined : (body.id ?? `tax-${crypto.randomUUID()}`),
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
+    category_id: body.categoryId ?? body.category_id ?? null,
+    ledger_account_id: body.ledgerAccountId ?? body.ledger_account_id ?? null,
+    tax_form: body.taxForm ?? body.tax_form,
+    tax_line: body.taxLine ?? body.tax_line,
+    label: body.label,
+    notes: body.notes ?? "",
     is_active: body.isActive ?? body.is_active,
     updated_at: new Date().toISOString()
   });
@@ -1577,11 +1679,15 @@ function mapAccountInput(body: JsonRecord, isUpdate = false): JsonRecord {
 function mapRuleInput(body: JsonRecord, isUpdate = false): JsonRecord {
   return compact({
     id: isUpdate ? undefined : (body.id ?? `rule-${Date.now()}`),
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
     pattern: body.pattern,
-    suggested_account_id: body.suggestedAccountId ?? body.suggested_account_id,
+    match_field: body.matchField ?? body.match_field ?? "description",
+    suggested_category_id: body.suggestedCategoryId ?? body.suggested_category_id ?? null,
+    suggested_ledger_account_id: body.suggestedLedgerAccountId ?? body.suggested_ledger_account_id ?? body.suggestedAccountId ?? body.suggested_account_id,
     suggested_tags: body.suggestedTags ?? body.suggested_tags ?? [],
     suggested_counterparty: body.suggestedCounterparty ?? body.suggested_counterparty ?? "",
     description: body.description ?? "",
+    is_active: body.isActive ?? body.is_active,
     updated_at: new Date().toISOString()
   });
 }
@@ -1589,9 +1695,10 @@ function mapRuleInput(body: JsonRecord, isUpdate = false): JsonRecord {
 function mapAttachmentInput(body: JsonRecord, isUpdate = false): JsonRecord {
   return compact({
     id: isUpdate ? undefined : (body.id ?? `attach-${crypto.randomUUID()}`),
-    transaction_id: body.transactionId ?? body.transaction_id ?? null,
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
+    transaction_id: normalizeUuidOrNull(body.transactionId ?? body.transaction_id),
     statement_id: body.statementId ?? body.statement_id ?? null,
-    account_id: body.accountId ?? body.account_id ?? null,
+    financial_account_id: body.financialAccountId ?? body.financial_account_id ?? body.accountId ?? body.account_id ?? null,
     counterparty_id: body.counterpartyId ?? body.counterparty_id ?? null,
     obligation_id: body.obligationId ?? body.obligation_id ?? null,
     schedule_id: body.scheduleId ?? body.schedule_id ?? null,
@@ -1606,7 +1713,8 @@ function mapAttachmentInput(body: JsonRecord, isUpdate = false): JsonRecord {
 function mapStatementInput(body: JsonRecord, isUpdate = false): JsonRecord {
   return compact({
     id: isUpdate ? undefined : (body.id ?? `stmt-${crypto.randomUUID()}`),
-    account_id: body.accountId ?? body.account_id,
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
+    financial_account_id: body.financialAccountId ?? body.financial_account_id ?? body.accountId ?? body.account_id,
     start_date: body.startDate ?? body.start_date,
     end_date: body.endDate ?? body.end_date,
     opening_balance: body.openingBalance ?? body.opening_balance,
@@ -1620,10 +1728,12 @@ function mapStatementInput(body: JsonRecord, isUpdate = false): JsonRecord {
 function mapScheduleInput(body: JsonRecord, isUpdate = false): JsonRecord {
   return compact({
     id: isUpdate ? undefined : (body.id ?? `sched-${crypto.randomUUID()}`),
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
     name: body.name,
     amount: body.amount,
-    account_id: body.accountId ?? body.account_id,
-    source_account_id: body.sourceAccountId ?? body.source_account_id,
+    category_id: body.categoryId ?? body.category_id ?? null,
+    ledger_account_id: body.ledgerAccountId ?? body.ledger_account_id ?? body.accountId ?? body.account_id,
+    financial_account_id: body.financialAccountId ?? body.financial_account_id ?? body.sourceAccountId ?? body.source_account_id,
     frequency: body.frequency,
     next_due_date: body.nextDueDate ?? body.next_due_date,
     tags: body.tags ?? [],
@@ -1653,7 +1763,7 @@ function mapObligationInput(body: JsonRecord, isUpdate = false): JsonRecord {
     amount: body.amount,
     type: body.type,
     description: body.description,
-    transaction_id: body.transactionId ?? body.transaction_id ?? null,
+    transaction_id: normalizeUuidOrNull(body.transactionId ?? body.transaction_id),
     due_date: body.dueDate ?? body.due_date ?? null,
     status: body.status ?? "active",
     updated_at: new Date().toISOString()
@@ -1664,75 +1774,115 @@ function mapTransactionInput(body: JsonRecord, isUpdate = false): JsonRecord {
   const date = body.date ?? body.transaction_date;
   const description = body.description ?? body.description_clean;
   const rawDescription = body.rawDescription ?? body.raw_description ?? body.description_raw ?? description;
-  const sourceAccountId = body.sourceAccountId ?? body.source_account_id;
+  const financialAccountId = body.financialAccountId ?? body.financial_account_id ?? body.sourceAccountId ?? body.source_account_id;
   const counterparty = body.counterparty ?? body.merchant_name ?? "";
   const importBatchId = body.importBatchId ?? body.import_batch_id ?? null;
 
   return compact({
     id: isUpdate ? undefined : body.id,
-    date,
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
     transaction_date: date,
-    description,
     description_clean: description,
-    raw_description: rawDescription,
     description_raw: rawDescription,
     amount: body.amount,
-    source_account_id: sourceAccountId,
+    financial_account_id: financialAccountId,
     tags: body.tags ?? [],
+    category_id: body.categoryId ?? body.category_id ?? null,
     counterparty,
-    merchant_name: counterparty,
-    reconciliation_id: body.reconciliationId ?? body.reconciliation_id ?? null,
     import_batch_id: importBatchId,
-    batch_id: importBatchId,
-    import_status: body.importStatus ?? body.import_status ?? (isUpdate ? undefined : "manual"),
+    raw_row_id: body.rawRowId ?? body.raw_row_id ?? null,
     classification_status: body.classificationStatus ?? body.classification_status ?? (isUpdate ? undefined : "classified"),
-    ledger_status: body.ledgerStatus ?? body.ledger_status ?? (isUpdate ? undefined : "not_posted"),
+    journal_status: body.journalStatus ?? body.journal_status ?? body.ledgerStatus ?? body.ledger_status ?? (isUpdate ? undefined : "not_posted"),
     source_metadata: body.sourceMetadata ?? body.source_metadata ?? {},
     updated_at: new Date().toISOString()
   });
 }
 
-async function replaceLedgerEntries(env: Env, tx: JsonRecord, categoryAccountId: string): Promise<void> {
+async function replaceJournalEntries(env: Env, tx: JsonRecord, categoryAccountId: string): Promise<void> {
   const txId = tx.id;
-  const sourceAccountId = tx.source_account_id;
-  const date = tx.date ?? tx.transaction_date;
+  const sourceAccountId = tx.financial_account_id;
+  const date = tx.transaction_date;
   const amount = Number(tx.amount);
 
   if (!txId || !sourceAccountId || !date || !categoryAccountId || isNaN(amount)) {
     return;
   }
 
-  const deleteRes = await supabaseFetch(env, `/finance_ledger_entries?transaction_id=eq.${filterValue(txId)}`, {
+  const existingEntries = await supabaseFetch(env, `/journal_entries?transaction_id=eq.${filterValue(txId)}&select=id`);
+  await assertSupabaseOk(existingEntries, "Failed to select existing journal entries");
+  const entries = await existingEntries.json() as JsonRecord[];
+  const entryIds = entries.map((entry) => entry.id).filter(Boolean);
+
+  for (const entryId of entryIds) {
+    const deleteLinesRes = await supabaseFetch(env, `/journal_lines?journal_entry_id=eq.${filterValue(entryId)}`, {
+      method: "DELETE"
+    });
+    await assertSupabaseOk(deleteLinesRes, "Failed to replace existing journal lines");
+  }
+
+  const deleteRes = await supabaseFetch(env, `/journal_entries?transaction_id=eq.${filterValue(txId)}`, {
     method: "DELETE"
   });
-  await assertSupabaseOk(deleteRes, "Failed to replace existing ledger entries");
+  await assertSupabaseOk(deleteRes, "Failed to replace existing journal entries");
+
+  const sourceLedgerAccountId = await getFinancialAccountDefaultLedger(env, sourceAccountId);
+  if (!sourceLedgerAccountId) {
+    throw new Error(`Financial account ${sourceAccountId} does not have a default ledger account.`);
+  }
+
+  const entryRes = await supabaseFetch(env, "/journal_entries", {
+    method: "POST",
+    body: JSON.stringify({
+      workspace_id: tx.workspace_id ?? "default",
+      transaction_id: txId,
+      entry_date: date,
+      description: tx.description_clean ?? tx.description ?? "Transaction",
+      status: "draft",
+      source: tx.import_batch_id ? "import" : "manual"
+    }),
+    headers: { "Prefer": "return=representation" }
+  });
+  await assertSupabaseOk(entryRes, "Failed to insert journal entry");
+  const entryData = await entryRes.json() as JsonRecord[];
+  const journalEntryId = entryData[0].id;
 
   const absoluteAmount = Math.abs(amount);
   const isOutflow = amount < 0;
-  const entries = [
+  const lines = [
     {
-      id: `led-${txId}-src`,
-      transaction_id: txId,
-      account_id: sourceAccountId,
+      workspace_id: tx.workspace_id ?? "default",
+      journal_entry_id: journalEntryId,
+      ledger_account_id: sourceLedgerAccountId,
       debit: isOutflow ? 0 : absoluteAmount,
-      credit: isOutflow ? absoluteAmount : 0,
-      date
+      credit: isOutflow ? absoluteAmount : 0
     },
     {
-      id: `led-${txId}-cat`,
-      transaction_id: txId,
-      account_id: categoryAccountId,
+      workspace_id: tx.workspace_id ?? "default",
+      journal_entry_id: journalEntryId,
+      ledger_account_id: categoryAccountId,
       debit: isOutflow ? absoluteAmount : 0,
-      credit: isOutflow ? 0 : absoluteAmount,
-      date
+      credit: isOutflow ? 0 : absoluteAmount
     }
   ];
 
-  const insertRes = await supabaseFetch(env, "/finance_ledger_entries", {
+  const insertRes = await supabaseFetch(env, "/journal_lines", {
     method: "POST",
-    body: JSON.stringify(entries)
+    body: JSON.stringify(lines)
   });
-  await assertSupabaseOk(insertRes, "Failed to insert ledger entries");
+  await assertSupabaseOk(insertRes, "Failed to insert journal lines");
+
+  const txStatusRes = await supabaseFetch(env, `/transactions?id=eq.${filterValue(txId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ journal_status: "draft", updated_at: new Date().toISOString() })
+  });
+  await assertSupabaseOk(txStatusRes, "Failed to update transaction journal status");
+}
+
+async function getFinancialAccountDefaultLedger(env: Env, financialAccountId: string): Promise<string | null> {
+  const res = await supabaseFetch(env, `/financial_accounts?id=eq.${filterValue(financialAccountId)}&select=default_ledger_account_id`);
+  await assertSupabaseOk(res, `Failed to select financial account ${financialAccountId}`);
+  const data = await res.json() as JsonRecord[];
+  return data[0]?.default_ledger_account_id ?? null;
 }
 
 function clampInteger(raw: string | null, fallback: number, min: number, max: number): number {

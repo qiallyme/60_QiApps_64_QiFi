@@ -10,12 +10,28 @@ export interface Account {
   code: string;
   name: string;
   type: AccountType;
+  normalBalance?: 'debit' | 'credit';
   description: string;
   isActive: boolean;
+  parentLedgerAccountId?: string | null;
+  // Deprecated compatibility fields. Real account metadata lives on FinancialAccount.
   accountNumber?: string;
   routingNumber?: string;
   institution?: string;
   parentAccountId?: string | null;
+}
+
+export interface FinancialAccount {
+  id: string;
+  name: string;
+  institution?: string | null;
+  accountMask?: string | null;
+  accountKind: 'cash' | 'checking' | 'savings' | 'credit_card' | 'loan' | 'wallet' | 'platform' | 'other';
+  sourceProvider?: string | null;
+  currentBalance: number;
+  currency: string;
+  defaultLedgerAccountId?: string | null;
+  isActive: boolean;
 }
 
 export interface ImportBatch {
@@ -23,7 +39,8 @@ export interface ImportBatch {
   createdAt: string;
   fileName: string;
   rawCount: number;
-  sourceAccountId: string; // COA Account ID (e.g. assets-checking)
+  sourceAccountId: string; // Financial account ID
+  financialAccountId?: string | null;
 }
 
 export interface RawImportedRow {
@@ -34,6 +51,8 @@ export interface RawImportedRow {
   amount: number; // positive = inflow, negative = outflow
   status: 'pending' | 'processed' | 'ignored';
   suggestedAccountId?: string;
+  suggestedLedgerAccountId?: string;
+  suggestedCategoryId?: string | null;
   suggestedTags?: string[];
   suggestedCounterparty?: string;
   memo?: string;
@@ -55,6 +74,8 @@ export interface Transaction {
   rawDescription: string;
   amount: number; // net amount from source account perspective
   sourceAccountId: string; // COA Account ID (Checking, Credit Card)
+  financialAccountId?: string;
+  categoryId?: string | null;
   tags: string[];
   counterparty: string;
   reconciliationId?: string | null; // Statement ID or null
@@ -66,6 +87,8 @@ export interface LedgerEntry {
   id: string;
   transactionId: string;
   accountId: string; // COA Account ID
+  journalEntryId?: string;
+  ledgerAccountId?: string;
   debit: number;  // increases assets/expenses, decreases liabilities/equity/revenue
   credit: number; // increases liabilities/equity/revenue, decreases assets/expenses
   date: string;   // duplicated for fast lookup
@@ -149,4 +172,3 @@ export interface AiSuggestionMetadata {
   suggestedCounterparty: string;
   rationale: string;
 }
-

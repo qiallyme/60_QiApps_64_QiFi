@@ -85,6 +85,8 @@ export interface Account {
   code: string;
   name: string;
   type: string;
+  normal_balance?: string;
+  normalBalance?: string;
   detail_type?: string;
   detailType?: string;
   description: string;
@@ -98,6 +100,25 @@ export interface Account {
   parentAccountId?: string;
 }
 
+export interface FinancialAccount {
+  id: string;
+  name: string;
+  institution?: string;
+  account_mask?: string;
+  accountMask?: string;
+  account_kind?: string;
+  accountKind?: string;
+  source_provider?: string;
+  sourceProvider?: string;
+  current_balance?: number;
+  currentBalance?: number;
+  currency?: string;
+  default_ledger_account_id?: string | null;
+  defaultLedgerAccountId?: string | null;
+  is_active?: boolean;
+  isActive?: boolean;
+}
+
 export interface Category {
   id: string;
   code: string;
@@ -108,11 +129,20 @@ export interface Category {
 
 export interface Transaction {
   id: string;
-  date: string;
+  date?: string;
+  transaction_date?: string;
+  transactionDate?: string;
   description: string;
+  description_clean?: string;
+  descriptionClean?: string;
   raw_description: string;
   amount: number;
-  source_account_id: string;
+  source_account_id?: string;
+  sourceAccountId?: string;
+  financial_account_id?: string;
+  financialAccountId?: string;
+  category_id?: string | null;
+  categoryId?: string | null;
   tags: string[];
   counterparty: string;
   reconciliation_id?: string | null;
@@ -148,9 +178,13 @@ export interface ImportPreviewResponse {
 }
 
 export interface FinanceState {
+  financialAccounts: any[];
+  ledgerAccounts: any[];
   accounts: any[];
   categories: any[];
   transactions: any[];
+  journalEntries: any[];
+  journalLines: any[];
   ledgerEntries: any[];
   importBatches: any[];
   rawRows: any[];
@@ -219,6 +253,10 @@ export const qifinanceApi = {
 
   async createAccount(account: Partial<Account>): Promise<Account> {
     return postJson('/api/finance/accounts', account, 'Failed to create account');
+  },
+
+  async createFinancialAccount(account: Partial<FinancialAccount>): Promise<FinancialAccount> {
+    return postJson('/api/finance/financial-accounts', account, 'Failed to create financial account');
   },
 
   async updateAccount(id: string, account: Partial<Account>): Promise<Account> {

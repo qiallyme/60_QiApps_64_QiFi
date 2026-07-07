@@ -22,9 +22,10 @@ import ReportsView from './components/ReportsView';
 import SettingsView from './components/SettingsView';
 import CategoryRulesView from './components/CategoryRulesView';
 import AssistantView from './components/AssistantView';
+import FinancialAccountsView from './components/FinancialAccountsView';
 
 import { 
-  TrendingUp, Inbox, Sparkles, Layers, BookOpen,
+  TrendingUp, Inbox, Sparkles, Layers, BookOpen, WalletCards,
   Users, FileText, ShieldCheck, BarChart2, ShieldAlert,
   Settings as SettingsIcon, Sliders, LockKeyhole, Bot
 } from 'lucide-react';
@@ -127,10 +128,17 @@ function SidebarAndNav() {
               </div>
             </Link>
 
+            <Link to="/financial-accounts" className={linkClass('/financial-accounts')}>
+              <div className="flex items-center gap-2.5">
+                <WalletCards size={16} className={navIconClass('/financial-accounts')} />
+                <span>Financial Accounts</span>
+              </div>
+            </Link>
+
             <Link to="/accounts" className={linkClass('/accounts')}>
               <div className="flex items-center gap-2.5">
                 <Layers size={16} className={navIconClass('/accounts')} />
-                <span>Accounts & Balances</span>
+                <span>Chart of Accounts</span>
               </div>
             </Link>
 
@@ -223,6 +231,7 @@ function SidebarAndNav() {
               <Route path="/dashboard" element={<ForecastView />} />
               <Route path="/assistant" element={<AssistantView />} />
               <Route path="/accounts" element={<ChartOfAccountsView />} />
+              <Route path="/financial-accounts" element={<FinancialAccountsView />} />
               <Route path="/transactions" element={<LedgerView />} />
               <Route path="/transactions/new" element={<LedgerView />} />
               <Route path="/imports" element={<ImportView />} />
