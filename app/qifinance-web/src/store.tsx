@@ -1277,7 +1277,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // -------------------------
   // Attachment Actions
   // -------------------------
-  const addAttachment = (
+  const addAttachment = async (
     transactionId: string | null,
     fileName: string,
     fileType: string,
@@ -1289,8 +1289,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     obligationId?: string | null,
     scheduleId?: string | null
   ) => {
+    const clientId = `attach-${Date.now()}`;
     const newAttach: Attachment = {
-      id: `attach-${Date.now()}`,
+      id: clientId,
       transactionId: transactionId || null,
       statementId: statementId || null,
       accountId: accountId || null,
@@ -1303,11 +1304,25 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       uploadedAt: new Date().toISOString(),
       notes
     };
-    qifinanceApi.createAttachment(newAttach)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to create attachment on API, using localStorage:", err));
-    const nextAttachments = [newAttach, ...attachments];
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, nextAttachments, statements, schedules);
+
+    // Optimistic local update
+    const optimisticList = [newAttach, ...attachments];
+    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, optimisticList, statements, schedules);
+
+    try {
+      const savedAttach = await qifinanceApi.createAttachment(newAttach);
+      // If the server returned a different ID, replace the client placeholder
+      if (savedAttach?.id && savedAttach.id !== clientId) {
+        const mapped = { ...newAttach, id: savedAttach.id };
+        const reconciled = [mapped, ...attachments];
+        saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, reconciled, statements, schedules);
+      }
+      // Full state refresh ensures anything else the server changed is reflected
+      await refreshApiState();
+    } catch (err) {
+      console.error('[QiFi] Attachment failed to save to Supabase. Local copy preserved until refresh:', err);
+      // Local fallback is already in place from optimistic update above
+    }
   };
 
   const deleteAttachment = (id: string) => {

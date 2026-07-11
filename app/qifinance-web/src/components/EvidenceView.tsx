@@ -292,6 +292,7 @@ export default function EvidenceView() {
                 type="file" 
                 ref={fileInputRef}
                 accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                capture="environment"
                 className="hidden" 
                 disabled={!uploadEntityId}
                 onChange={handleGlobalFileUpload} 
@@ -370,7 +371,7 @@ export default function EvidenceView() {
                           <div className="flex items-center gap-2 justify-end">
                             <label className="flex items-center gap-1 bg-zinc-950 border border-zinc-800 hover:border-emerald-500/40 hover:bg-emerald-500/5 text-zinc-400 hover:text-emerald-400 px-2 py-1 rounded text-[10px] font-bold cursor-pointer transition-all">
                               <Upload size={11} /> Upload
-                              <input type="file" accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" className="hidden" onChange={(e) => {
+                              <input type="file" accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" capture="environment" className="hidden" onChange={(e) => {
                                 if (e.target.files && e.target.files[0]) {
                                   const file = e.target.files[0];
                                   const reader = new FileReader();
