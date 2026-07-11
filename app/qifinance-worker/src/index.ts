@@ -342,6 +342,7 @@ function json(data: any, status = 200): Response {
 
 async function handleSupabaseError(res: Response, route: string): Promise<Response> {
   const errorText = await res.text();
+  console.error(`[Supabase Error Response] Route: ${route} -> Status: ${res.status}, Details: ${errorText}`);
   const status = res.status >= 400 && res.status < 500 ? res.status : 500;
   return json({
     error: "Supabase request failed",
@@ -353,7 +354,9 @@ async function handleSupabaseError(res: Response, route: string): Promise<Respon
 
 async function assertSupabaseOk(res: Response, message: string): Promise<void> {
   if (!res.ok) {
-    throw new Error(`${message}: ${await res.text()}`);
+    const errorText = await res.text();
+    console.error(`[Supabase Assertion Failed] Message: ${message}, Details: ${errorText}`);
+    throw new Error(`${message}: ${errorText}`);
   }
 }
 
@@ -362,6 +365,11 @@ async function supabaseFetch(env: Env, path: string, init: RequestInit = {}): Pr
     throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY secrets must be configured in the worker.");
   }
 
+  const startTime = performance.now();
+  const method = init.method || "GET";
+  const bodyLog = init.body ? `, Body: ${truncate(String(init.body), 300)}` : "";
+  console.log(`[Supabase Request] ${method} ${path}${bodyLog}`);
+
   const headers: Record<string, string> = {
     "apikey": env.SUPABASE_SERVICE_ROLE_KEY,
     "Authorization": `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
@@ -369,10 +377,25 @@ async function supabaseFetch(env: Env, path: string, init: RequestInit = {}): Pr
     ...(init.headers as Record<string, string> || {}),
   };
 
-  return fetch(`${env.SUPABASE_URL}/rest/v1${path}`, {
-    ...init,
-    headers,
-  });
+  try {
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1${path}`, {
+      ...init,
+      headers,
+    });
+    const duration = (performance.now() - startTime).toFixed(1);
+    console.log(`[Supabase Response] ${method} ${path} -> Status: ${res.status} (${duration}ms)`);
+    
+    if (!res.ok) {
+      const clone = res.clone();
+      const errText = await clone.text();
+      console.error(`[Supabase Error Details] ${method} ${path} -> Status: ${res.status}, Error: ${errText}`);
+    }
+    return res;
+  } catch (err: any) {
+    const duration = (performance.now() - startTime).toFixed(1);
+    console.error(`[Supabase Fetch Exception] ${method} ${path} -> Error: ${err?.message || err} (${duration}ms)`);
+    throw err;
+  }
 }
 
 function filterValue(value: string): string {
