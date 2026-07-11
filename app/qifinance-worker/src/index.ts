@@ -402,6 +402,42 @@ function filterValue(value: string): string {
   return encodeURIComponent(value);
 }
 
+async function ensureCounterpartyExists(env: Env, rawName: string): Promise<string> {
+  const name = normalizeMerchantName(rawName);
+  if (!name) return "";
+
+  const slug = slugify(name);
+  const cpId = `cp-${slug}`;
+
+  try {
+    const res = await supabaseFetch(env, `/counterparties?id=eq.${filterValue(cpId)}&select=name`);
+    if (res.ok) {
+      const data = await res.json() as any[];
+      if (data.length > 0) {
+        return data[0].name;
+      }
+    }
+
+    const counterpartyRecord = mapCounterpartyInput({
+      id: cpId,
+      name: name,
+      relationship_type: "other"
+    }, false);
+
+    const postRes = await supabaseFetch(env, "/counterparties", {
+      method: "POST",
+      body: JSON.stringify(counterpartyRecord)
+    });
+    if (!postRes.ok) {
+      console.warn(`[Counterparty Sync] failed to insert counterparty "${name}": ${await postRes.text()}`);
+    }
+  } catch (err) {
+    console.warn(`[Counterparty Sync Error] failed to check or create "${name}":`, err);
+  }
+
+  return name;
+}
+
 function compact(record: JsonRecord): JsonRecord {
   return Object.fromEntries(
     Object.entries(record).filter(([, value]) => value !== undefined)
@@ -876,6 +912,9 @@ async function createAssistantTransaction(action: JsonRecord, env: Env, context:
     return assistantError("create_transaction", `Ledger account not found: ${categoryAccountId}`);
   }
 
+  const rawCounterparty = action.counterparty ?? action.merchant_name ?? "";
+  const canonicalCounterparty = rawCounterparty ? await ensureCounterpartyExists(env, rawCounterparty) : "";
+
   const txToInsert = mapTransactionInput({
     ...action,
     id: normalizeId(action.id) || `tx-${crypto.randomUUID()}`,
@@ -883,6 +922,7 @@ async function createAssistantTransaction(action: JsonRecord, env: Env, context:
     description,
     amount,
     financialAccountId: sourceAccountId,
+    counterparty: canonicalCounterparty,
     journalStatus: categoryAccountId ? "draft" : "not_posted"
   }, false);
 
@@ -1257,6 +1297,13 @@ async function handleCreateTransaction(request: Request, env: Env): Promise<Resp
   }
 
   const categoryAccountId = body.ledgerAccountId ?? body.ledger_account_id ?? body.categoryAccountId ?? body.category_account_id;
+  
+  // Clean and standardize counterparty
+  const rawCounterparty = body.counterparty ?? body.merchant_name ?? "";
+  if (rawCounterparty) {
+    body.counterparty = await ensureCounterpartyExists(env, rawCounterparty);
+  }
+
   const txToInsert = mapTransactionInput(body, false);
   txToInsert.journal_status = categoryAccountId ? "draft" : txToInsert.journal_status;
 
@@ -1279,6 +1326,13 @@ async function handleCreateTransaction(request: Request, env: Env): Promise<Resp
 async function handleUpdateTransaction(id: string, request: Request, env: Env): Promise<Response> {
   const body = await request.json() as JsonRecord;
   const categoryAccountId = body.ledgerAccountId ?? body.ledger_account_id ?? body.categoryAccountId ?? body.category_account_id;
+  
+  // Clean and standardize counterparty
+  const rawCounterparty = body.counterparty ?? body.merchant_name;
+  if (rawCounterparty !== undefined) {
+    body.counterparty = rawCounterparty ? await ensureCounterpartyExists(env, rawCounterparty) : "";
+  }
+
   const txUpdates = mapTransactionInput(body, true);
 
   const res = await supabaseFetch(env, `/transactions?id=eq.${filterValue(id)}`, {
@@ -1587,29 +1641,36 @@ async function handleImportCommit(request: Request, env: Env): Promise<Response>
   let txData: any[] = [];
 
   if (nonDuplicateRows.length > 0) {
-    const transactionsToInsert = nonDuplicateRows.map((row: any) => {
-      const rawRow = rawRowsData.find((raw) => Number(raw.row_number) === Number(row.index ?? nonDuplicateRows.indexOf(row)));
-      const record = mapTransactionInput({
-        date: row.date,
-        description: row.description,
-        rawDescription: row.rawDescription || row.description,
-        amount: row.amount,
-        financialAccountId: sourceAccountId,
-        categoryId: row.suggestedCategoryId ?? null,
-        tags: row.suggestedTags || [],
-        counterparty: row.suggestedCounterparty || "",
-        importBatchId: batchId,
-        rawRowId: rawRow?.id,
-        importStatus: "imported",
-        classificationStatus: row.suggestedAccountId ? "classified" : "unclassified",
-        journalStatus: "draft",
-        sourceMetadata: {
-          raw_row_index: row.index,
-          import_confidence: row.confidence
-        }
-      }, false);
-      return record;
-    });
+    const transactionsToInsert = await Promise.all(
+      nonDuplicateRows.map(async (row: any) => {
+        const originalIdx = row.index ?? rows.indexOf(row);
+        const rawRow = rawRowsData.find((raw) => Number(raw.row_number) === Number(originalIdx));
+        
+        const rawCounterparty = row.suggestedCounterparty || "";
+        const canonicalCounterparty = rawCounterparty ? await ensureCounterpartyExists(env, rawCounterparty) : "";
+
+        const record = mapTransactionInput({
+          date: row.date,
+          description: row.description,
+          rawDescription: row.rawDescription || row.description,
+          amount: row.amount,
+          financialAccountId: sourceAccountId,
+          categoryId: row.suggestedCategoryId ?? null,
+          tags: row.suggestedTags || [],
+          counterparty: canonicalCounterparty,
+          importBatchId: batchId,
+          rawRowId: rawRow?.id,
+          importStatus: "imported",
+          classificationStatus: row.suggestedAccountId ? "classified" : "unclassified",
+          journalStatus: "draft",
+          sourceMetadata: {
+            raw_row_index: row.index,
+            import_confidence: row.confidence
+          }
+        }, false);
+        return record;
+      })
+    );
 
     const txRes = await supabaseFetch(env, "/transactions", {
       method: "POST",
