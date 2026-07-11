@@ -9,6 +9,7 @@ export interface Env {
   QIFI_API_TOKEN: string;
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
+  QIFI_STORAGE_BUCKET?: string;
 }
 
 type JsonRecord = Record<string, any>;
@@ -323,6 +324,16 @@ async function router(request: Request, env: Env): Promise<Response> {
     return await handleImportCommit(request, env);
   }
 
+  if (path === "/api/finance/attachments" && request.method === "POST") {
+    return await handleCreateAttachment(request, env);
+  }
+
+  const attachMatch = path.match(/^\/api\/finance\/attachments\/([^/]+)\/url$/);
+  if (attachMatch && request.method === "GET") {
+    const id = decodeURIComponent(attachMatch[1]);
+    return await handleGetAttachmentUrl(id, env);
+  }
+
   const domainMatch = path.match(/^\/api\/finance\/([^/]+)(?:\/([^/]+))?$/);
   if (domainMatch && DOMAIN_ROUTES[domainMatch[1]]) {
     const domain = domainMatch[1];
@@ -378,7 +389,8 @@ async function supabaseFetch(env: Env, path: string, init: RequestInit = {}): Pr
   };
 
   try {
-    const res = await fetch(`${env.SUPABASE_URL}/rest/v1${path}`, {
+    const prefix = path.startsWith("/storage/v1") ? "" : "/rest/v1";
+    const res = await fetch(`${env.SUPABASE_URL}${prefix}${path}`, {
       ...init,
       headers,
     });
@@ -1929,4 +1941,110 @@ function clampInteger(raw: string | null, fallback: number, min: number, max: nu
   const parsed = raw === null ? NaN : Number.parseInt(raw, 10);
   if (Number.isNaN(parsed)) return fallback;
   return Math.min(Math.max(parsed, min), max);
+}
+
+function decodeBase64DataUrl(dataUrl: string): { buffer: ArrayBuffer, mimeType: string } | null {
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return null;
+  const mimeType = match[1];
+  const b64 = match[2];
+  const binaryString = atob(b64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return { buffer: bytes.buffer, mimeType };
+}
+
+async function handleCreateAttachment(request: Request, env: Env): Promise<Response> {
+  const body = await request.json() as JsonRecord;
+  const bucketName = env.QIFI_STORAGE_BUCKET || "qifi-vault";
+  
+  const metadata = mapAttachmentInput(body, false);
+  
+  let objectPath: string | null = null;
+  let fileSize: number | null = null;
+  
+  if (metadata.data_url) {
+    const decoded = decodeBase64DataUrl(metadata.data_url);
+    if (decoded) {
+      console.log(`[Storage] Uploading attachment ${metadata.id} to ${bucketName}`);
+      
+      const date = new Date();
+      const year = date.getUTCFullYear();
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const sanitizedFilename = (metadata.file_name || "upload").replace(/[^a-zA-Z0-9.-]/g, '_');
+      objectPath = `workspaces/${metadata.workspace_id}/receipts/${year}/${month}/${metadata.id}/${sanitizedFilename}`;
+      fileSize = decoded.buffer.byteLength;
+      
+      const uploadRes = await supabaseFetch(env, `/storage/v1/object/${bucketName}/${objectPath}`, {
+        method: "POST",
+        body: decoded.buffer,
+        headers: { "Content-Type": decoded.mimeType }
+      });
+      
+      if (!uploadRes.ok) {
+        return await handleSupabaseError(uploadRes, "/api/finance/attachments (storage upload)");
+      }
+      
+      console.log(`[Storage] Upload successful for ${objectPath}`);
+    }
+  }
+
+  const dbRecord = {
+    ...metadata,
+    data_url: objectPath ? null : metadata.data_url,
+    bucket_name: objectPath ? bucketName : null,
+    object_path: objectPath,
+    file_size: fileSize
+  };
+
+  const dbRes = await supabaseFetch(env, `/attachments`, {
+    method: "POST",
+    body: JSON.stringify(dbRecord),
+    headers: { "Prefer": "return=representation" }
+  });
+
+  if (!dbRes.ok) {
+    console.error(`[Storage Error] Database insert failed for attachment ${metadata.id}. Attempting cleanup...`);
+    if (objectPath) {
+      await supabaseFetch(env, `/storage/v1/object/${bucketName}/${objectPath}`, {
+        method: "DELETE"
+      });
+    }
+    return await handleSupabaseError(dbRes, "/api/finance/attachments (db insert)");
+  }
+
+  const dbData = await dbRes.json() as any[];
+  return json(dbData[0]);
+}
+
+async function handleGetAttachmentUrl(id: string, env: Env): Promise<Response> {
+  const bucketName = env.QIFI_STORAGE_BUCKET || "qifi-vault";
+  
+  const res = await supabaseFetch(env, `/attachments?id=eq.${filterValue(id)}&select=object_path,bucket_name,data_url`);
+  if (!res.ok) return await handleSupabaseError(res, `/api/finance/attachments/${id}/url (fetch metadata)`);
+  
+  const data = await res.json() as any[];
+  if (data.length === 0) return json({ error: "Attachment not found" }, 404);
+  
+  const attach = data[0];
+  if (!attach.object_path) {
+    if (attach.data_url) {
+      return json({ url: attach.data_url, type: 'data_url' }); 
+    }
+    return json({ error: "Attachment has no object_path or data_url" }, 400);
+  }
+
+  const bName = attach.bucket_name || bucketName;
+  const signRes = await supabaseFetch(env, `/storage/v1/object/sign/${bName}/${attach.object_path}`, {
+    method: "POST",
+    body: JSON.stringify({ expiresIn: 3600 })
+  });
+
+  if (!signRes.ok) return await handleSupabaseError(signRes, `/api/finance/attachments/${id}/url (sign)`);
+  
+  const signData = await signRes.json() as { signedURL: string };
+  return json({ url: `${env.SUPABASE_URL}/storage/v1${signData.signedURL}`, type: 'signed_url' });
 }

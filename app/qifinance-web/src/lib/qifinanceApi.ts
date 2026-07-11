@@ -341,6 +341,10 @@ export const qifinanceApi = {
     return postJson('/api/finance/attachments', attachment, 'Failed to create attachment');
   },
 
+  async getAttachmentUrl(id: string): Promise<{ url: string, type: 'signed_url' | 'data_url' }> {
+    return requestJson(`/api/finance/attachments/${idPath(id)}/url`, `Failed to fetch attachment url ${id}`);
+  },
+
   async deleteAttachment(id: string): Promise<any> {
     return deleteJson(`/api/finance/attachments/${idPath(id)}`, `Failed to delete attachment ${id}`);
   },

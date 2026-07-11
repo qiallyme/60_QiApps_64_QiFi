@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
-import { Download, ExternalLink, FileQuestion, FileText, Image as ImageIcon, X } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Download, ExternalLink, FileQuestion, FileText, Image as ImageIcon, X, Loader2 } from 'lucide-react';
 import { Attachment } from '../types';
+import { qifinanceApi } from '../lib/qifinanceApi';
 
 interface AttachmentPreviewModalProps {
   attachment: Attachment | null;
@@ -42,21 +43,45 @@ function decodeTextDataUrl(dataUrl: string): string | null {
 }
 
 export default function AttachmentPreviewModal({ attachment, onClose, titlePrefix }: AttachmentPreviewModalProps) {
+  const [dynamicUrl, setDynamicUrl] = useState<string | null>(null);
+  const [isLoadingUrl, setIsLoadingUrl] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!attachment) {
+      setDynamicUrl(null);
+      setUrlError(null);
+      return;
+    }
+
+    if (attachment.dataUrl) {
+      setDynamicUrl(attachment.dataUrl);
+      setUrlError(null);
+      return;
+    }
+
+    setIsLoadingUrl(true);
+    setUrlError(null);
+    qifinanceApi.getAttachmentUrl(attachment.id)
+      .then(res => setDynamicUrl(res.url))
+      .catch(err => setUrlError(err.message || 'Failed to load document URL'))
+      .finally(() => setIsLoadingUrl(false));
+  }, [attachment]);
+
   const textPreview = useMemo(() => {
-    if (!attachment) return null;
+    if (!attachment || !dynamicUrl) return null;
 
     const looksText =
       TEXT_TYPES.some(type => attachment.fileType.startsWith(type)) ||
       hasExtension(attachment.fileName, ['.txt', '.csv', '.tsv', '.json', '.xml', '.md', '.log']);
 
     if (!looksText) return null;
-    return decodeTextDataUrl(attachment.dataUrl);
-  }, [attachment]);
+    return decodeTextDataUrl(dynamicUrl);
+  }, [attachment, dynamicUrl]);
 
   if (!attachment) return null;
 
-  const fileType = attachment.fileType || 'Unknown file type';
-  const isImage = fileType.startsWith('image/') || attachment.dataUrl.includes('images.unsplash.com');
+  const isImage = fileType.startsWith('image/') || (dynamicUrl && dynamicUrl.includes('images.unsplash.com')) || false;
   const isPdf = fileType === 'application/pdf' || hasExtension(attachment.fileName, ['.pdf']);
   const isOfficeDoc = hasExtension(attachment.fileName, ['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']);
 
@@ -77,19 +102,25 @@ export default function AttachmentPreviewModal({ attachment, onClose, titlePrefi
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <a
-              href={attachment.dataUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="hidden sm:inline-flex items-center gap-1.5 text-zinc-400 hover:text-zinc-100 bg-zinc-800/80 hover:bg-zinc-750 border border-zinc-700 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-            >
-              <ExternalLink size={12} /> Open
-            </a>
-            <a
-              href={attachment.dataUrl}
-              download={attachment.fileName}
-              className="inline-flex items-center gap-1.5 text-zinc-400 hover:text-zinc-100 bg-zinc-800/80 hover:bg-zinc-750 border border-zinc-700 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-            >
+            {dynamicUrl && (
+              <>
+                <a
+                  href={dynamicUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hidden sm:inline-flex items-center gap-1.5 text-zinc-400 hover:text-zinc-100 bg-zinc-800/80 hover:bg-zinc-750 border border-zinc-700 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
+                >
+                  <ExternalLink size={12} /> Open
+                </a>
+                <a
+                  href={dynamicUrl}
+                  download={attachment.fileName}
+                  className="inline-flex items-center gap-1.5 text-zinc-400 hover:text-zinc-100 bg-zinc-800/80 hover:bg-zinc-750 border border-zinc-700 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
+                >
+                  <Download size={12} /> Save
+                </a>
+              </>
+            )}
               <Download size={12} /> Save
             </a>
             <button
@@ -103,44 +134,65 @@ export default function AttachmentPreviewModal({ attachment, onClose, titlePrefi
         </div>
 
         <div className="overflow-auto bg-zinc-950/60 flex-1 min-h-[320px]">
-          {isImage && (
-            <div className="h-full min-h-[320px] p-4 flex items-center justify-center">
-              <img
-                src={attachment.dataUrl}
-                alt={attachment.fileName}
-                referrerPolicy="no-referrer"
-                className="max-h-[72vh] max-w-full object-contain rounded-xl border border-zinc-800 shadow-2xl"
-              />
+          {isLoadingUrl && (
+            <div className="min-h-[320px] p-8 flex flex-col items-center justify-center space-y-4">
+              <Loader2 size={40} className="animate-spin text-emerald-500" />
+              <p className="text-zinc-400 text-sm font-medium">Fetching secure document URL...</p>
             </div>
           )}
 
-          {!isImage && isPdf && (
-            <iframe
-              title={attachment.fileName}
-              src={attachment.dataUrl}
-              className="w-full h-[72vh] bg-white"
-            />
-          )}
-
-          {!isImage && !isPdf && textPreview !== null && (
-            <pre className="m-0 p-4 sm:p-6 text-xs leading-relaxed text-zinc-200 whitespace-pre-wrap break-words font-mono">
-              {textPreview.slice(0, 200000)}
-              {textPreview.length > 200000 ? '\n\n[Preview truncated. Save the file to inspect the full document.]' : ''}
-            </pre>
-          )}
-
-          {!isImage && !isPdf && textPreview === null && (
+          {urlError && !isLoadingUrl && (
             <div className="min-h-[320px] p-8 flex items-center justify-center">
-              <div className="text-center max-w-sm space-y-3">
-                <FileQuestion size={54} className="mx-auto text-zinc-600" />
-                <p className="text-zinc-200 text-sm font-semibold">Preview is not available for this file type.</p>
-                <p className="text-zinc-500 text-xs leading-relaxed">
-                  {isOfficeDoc
-                    ? 'Word, Excel, and PowerPoint files need a document converter before they can render inside QiFi.'
-                    : 'This binary document can still be opened in a new tab or saved from this viewer.'}
-                </p>
+              <div className="text-center max-w-sm space-y-3 bg-rose-950/20 border border-rose-900/50 p-6 rounded-xl">
+                <FileQuestion size={40} className="mx-auto text-rose-500" />
+                <p className="text-rose-400 text-sm font-semibold">Failed to load document</p>
+                <p className="text-rose-500/80 text-xs">{urlError}</p>
               </div>
             </div>
+          )}
+
+          {!isLoadingUrl && !urlError && dynamicUrl && (
+            <>
+              {isImage && (
+                <div className="h-full min-h-[320px] p-4 flex items-center justify-center">
+                  <img
+                    src={dynamicUrl}
+                    alt={attachment.fileName}
+                    referrerPolicy="no-referrer"
+                    className="max-h-[72vh] max-w-full object-contain rounded-xl border border-zinc-800 shadow-2xl"
+                  />
+                </div>
+              )}
+
+              {!isImage && isPdf && (
+                <iframe
+                  title={attachment.fileName}
+                  src={dynamicUrl}
+                  className="w-full h-[72vh] bg-white"
+                />
+              )}
+
+              {!isImage && !isPdf && textPreview !== null && (
+                <pre className="m-0 p-4 sm:p-6 text-xs leading-relaxed text-zinc-200 whitespace-pre-wrap break-words font-mono">
+                  {textPreview.slice(0, 200000)}
+                  {textPreview.length > 200000 ? '\n\n[Preview truncated. Save the file to inspect the full document.]' : ''}
+                </pre>
+              )}
+
+              {!isImage && !isPdf && textPreview === null && (
+                <div className="min-h-[320px] p-8 flex items-center justify-center">
+                  <div className="text-center max-w-sm space-y-3">
+                    <FileQuestion size={54} className="mx-auto text-zinc-600" />
+                    <p className="text-zinc-200 text-sm font-semibold">Preview is not available for this file type.</p>
+                    <p className="text-zinc-500 text-xs leading-relaxed">
+                      {isOfficeDoc
+                        ? 'Word, Excel, and PowerPoint files need a document converter before they can render inside QiFi.'
+                        : 'This binary document can still be opened in a new tab or saved from this viewer.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 

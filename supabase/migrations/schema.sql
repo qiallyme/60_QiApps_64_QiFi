@@ -251,8 +251,15 @@ CREATE TABLE IF NOT EXISTS public.attachments (
     schedule_id TEXT,
     file_name TEXT NOT NULL,
     file_type TEXT NOT NULL,
-    data_url TEXT NOT NULL,
+    data_url TEXT,
+    bucket_name TEXT,
+    object_path TEXT,
+    file_size BIGINT,
+    raw_ocr_text TEXT,
+    parsed_ocr_json JSONB,
+    processing_status TEXT,
     uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     notes TEXT NOT NULL DEFAULT ''
 );
 

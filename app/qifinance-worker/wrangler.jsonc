@@ -16,6 +16,7 @@
   },
   "vars": {
     "SUPABASE_URL": "https://emnskvvajdlqixwzjfsm.supabase.co",
-    "OPENAI_MODEL": "gpt-4.1-mini"
+    "OPENAI_MODEL": "gpt-4.1-mini",
+    "QIFI_STORAGE_BUCKET": "qifi-vault"
   }
 }
