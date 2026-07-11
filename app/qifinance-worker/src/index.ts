@@ -1799,10 +1799,13 @@ function mapTransactionInput(body: JsonRecord, isUpdate = false): JsonRecord {
   const rawDescription = body.rawDescription ?? body.raw_description ?? body.description_raw ?? description;
   const financialAccountId = body.financialAccountId ?? body.financial_account_id ?? body.sourceAccountId ?? body.source_account_id;
   const counterparty = body.counterparty ?? body.merchant_name ?? "";
-  const importBatchId = body.importBatchId ?? body.import_batch_id ?? null;
+
+  const idVal = normalizeUuidOrNull(body.id);
+  const importBatchId = normalizeUuidOrNull(body.importBatchId ?? body.import_batch_id);
+  const rawRowId = normalizeUuidOrNull(body.rawRowId ?? body.raw_row_id);
 
   return compact({
-    id: isUpdate ? undefined : body.id,
+    id: isUpdate ? undefined : (idVal || undefined),
     workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
     transaction_date: date,
     description_clean: description,
@@ -1813,7 +1816,7 @@ function mapTransactionInput(body: JsonRecord, isUpdate = false): JsonRecord {
     category_id: body.categoryId ?? body.category_id ?? null,
     counterparty,
     import_batch_id: importBatchId,
-    raw_row_id: body.rawRowId ?? body.raw_row_id ?? null,
+    raw_row_id: rawRowId,
     classification_status: body.classificationStatus ?? body.classification_status ?? (isUpdate ? undefined : "classified"),
     journal_status: body.journalStatus ?? body.journal_status ?? body.ledgerStatus ?? body.ledger_status ?? (isUpdate ? undefined : "not_posted"),
     source_metadata: body.sourceMetadata ?? body.source_metadata ?? {},
