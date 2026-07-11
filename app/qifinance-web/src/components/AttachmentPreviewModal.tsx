@@ -121,8 +121,6 @@ export default function AttachmentPreviewModal({ attachment, onClose, titlePrefi
                 </a>
               </>
             )}
-              <Download size={12} /> Save
-            </a>
             <button
               onClick={onClose}
               className="text-zinc-400 hover:text-white p-1.5 hover:bg-zinc-800 rounded-lg cursor-pointer"
