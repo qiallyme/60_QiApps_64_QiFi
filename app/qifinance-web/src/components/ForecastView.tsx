@@ -47,7 +47,8 @@ export default function ForecastView() {
     addCounterparty,
     addObligation,
     counterparties,
-    addAttachment
+    addAttachment,
+    financialAccounts
   } = useQiStore();
 
   // Quick Actions modal states
@@ -57,7 +58,7 @@ export default function ForecastView() {
   const [qTxDate, setQTxDate] = useState(new Date().toISOString().split('T')[0]);
   const [qTxDesc, setQTxDesc] = useState('');
   const [qTxAmount, setQTxAmount] = useState('');
-  const [qTxSourceAcc, setQTxSourceAcc] = useState('assets-checking');
+  const [qTxSourceAcc, setQTxSourceAcc] = useState('');
   const [qTxCatAcc, setQTxCatAcc] = useState('suspense-uncategorized');
   const [qTxCounterparty, setQTxCounterparty] = useState('');
   const [qTxTagsText, setQTxTagsText] = useState('');
@@ -139,8 +140,8 @@ export default function ForecastView() {
       counterparty: qTxCounterparty
     } as any, qTxCatAcc);
 
-    if (qTxFileDataUrl) {
-      addAttachment(createdTx?.id ?? txId, qTxFileName, qTxFileType, qTxFileDataUrl, 'Uploaded via command center uploader');
+    if (createdTx && qTxFileDataUrl) {
+      addAttachment(createdTx.id, qTxFileName, qTxFileType, qTxFileDataUrl, 'Uploaded via command center uploader');
     }
     
     setQTxDesc('');
@@ -313,7 +314,7 @@ export default function ForecastView() {
         if (parsed.newSchedSource) return parsed.newSchedSource;
       } catch (e) {}
     }
-    return 'assets-checking';
+    return '';
   });
 
   const [newSchedFreq, setNewSchedFreq] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>(() => {
@@ -357,7 +358,7 @@ export default function ForecastView() {
       newSchedAmount ||
       newSchedTags ||
       newSchedCat !== 'expenses-software' ||
-      newSchedSource !== 'assets-checking' ||
+      newSchedSource !== '' ||
       newSchedFreq !== 'monthly' ||
       newSchedDate !== '2026-07-01'
     );
@@ -487,7 +488,7 @@ export default function ForecastView() {
       name: newSchedName,
       amount: Number(newSchedAmount),
       accountId: newSchedCat,
-      sourceAccountId: newSchedSource,
+      sourceAccountId: newSchedSource || (financialAccounts.length > 0 ? financialAccounts[0].id : ''),
       frequency: newSchedFreq,
       nextDueDate: newSchedDate,
       tags: newSchedTags.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
@@ -630,9 +631,13 @@ export default function ForecastView() {
             <div className="grid grid-cols-2 gap-3.5">
               <div>
                 <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Checking / Credit Card Account</label>
-                <select value={qTxSourceAcc} onChange={e => setQTxSourceAcc(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-zinc-700">
-                  {accounts.filter(a => ['asset', 'liability'].includes(a.type)).map(a => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
+                <select 
+                  value={qTxSourceAcc || (financialAccounts.length > 0 ? financialAccounts[0].id : '')}
+                  onChange={e => setQTxSourceAcc(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50"
+                >
+                  {financialAccounts.map(fa => (
+                    <option key={fa.id} value={fa.id}>{fa.name} ({fa.institution}) - ${fa.currentBalance.toFixed(2)}</option>
                   ))}
                 </select>
               </div>
@@ -1081,14 +1086,14 @@ export default function ForecastView() {
             <div>
               <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Pay From / Deposit To</label>
               <select
-                value={newSchedSource}
-                onChange={e => setNewSchedSource(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700"
-              >
-                {accounts.filter(a => ['asset', 'liability'].includes(a.type)).map(a => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
+                  value={newSchedSource || (financialAccounts.length > 0 ? financialAccounts[0].id : '')}
+                  onChange={e => setNewSchedSource(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700"
+                >
+                  {financialAccounts.map(fa => (
+                    <option key={fa.id} value={fa.id}>{fa.name} ({fa.institution}) - ${fa.currentBalance.toFixed(2)}</option>
+                  ))}
+                </select>
             </div>
             {/* Category */}
             <div>

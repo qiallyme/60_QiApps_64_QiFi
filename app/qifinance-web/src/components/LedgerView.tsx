@@ -27,7 +27,8 @@ export default function LedgerView() {
     addManualTransaction,
     updateTransaction,
     exportData,
-    importData
+    importData,
+    financialAccounts
   } = useQiStore();
 
   const { pathname } = useLocation();
@@ -128,8 +129,15 @@ export default function LedgerView() {
         if (parsed.manualSourceAcc) return parsed.manualSourceAcc;
       } catch (e) {}
     }
-    return 'assets-checking';
+    return '';
   });
+
+  // Ensure default financial account is set when they load
+  useEffect(() => {
+    if (!manualSourceAcc && financialAccounts.length > 0) {
+      setManualSourceAcc(financialAccounts[0].id);
+    }
+  }, [financialAccounts, manualSourceAcc]);
 
   const [manualCatAcc, setManualCatAcc] = useState(() => {
     const draft = localStorage.getItem('qifi_draft_ledger');
@@ -587,8 +595,8 @@ export default function LedgerView() {
                 onChange={e => setManualSourceAcc(e.target.value)}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25"
               >
-                {accounts.filter(a => ['asset', 'liability'].includes(a.type)).map(a => (
-                  <option key={a.id} value={a.id}>({a.code}) {a.name} - ${getAccountBalance(a.id).toFixed(2)}</option>
+                {financialAccounts.map(fa => (
+                  <option key={fa.id} value={fa.id}>({fa.institution}) {fa.name} - ${fa.currentBalance.toFixed(2)}</option>
                 ))}
               </select>
             </div>

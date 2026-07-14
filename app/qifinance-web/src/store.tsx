@@ -1124,54 +1124,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return mapApiTransaction(apiTx);
     } catch (err) {
-      console.warn("Failed to create transaction on API, using local fallback:", err);
+      console.error("Failed to create transaction on API:", err);
+      return null;
     }
-
-    const txId = (tx as any).id || `tx-${Date.now()}`;
-    const newTx: Transaction = {
-      ...tx,
-      id: txId,
-      createdAt: new Date().toISOString()
-    };
-
-    const absoluteAmount = Math.abs(tx.amount);
-    let sourceDebit = 0;
-    let sourceCredit = 0;
-    let categoryDebit = 0;
-    let categoryCredit = 0;
-
-    if (tx.amount < 0) {
-      sourceCredit = absoluteAmount;
-      categoryDebit = absoluteAmount;
-    } else {
-      sourceDebit = absoluteAmount;
-      categoryCredit = absoluteAmount;
-    }
-
-    const newLedgers: LedgerEntry[] = [
-      {
-        id: `led-${txId}-src`,
-        transactionId: txId,
-        accountId: tx.sourceAccountId,
-        debit: sourceDebit,
-        credit: sourceCredit,
-        date: tx.date
-      },
-      {
-        id: `led-${txId}-cat`,
-        transactionId: txId,
-        accountId: categoryAccountId,
-        debit: categoryDebit,
-        credit: categoryCredit,
-        date: tx.date
-      }
-    ];
-
-    const nextTxs = [newTx, ...transactions];
-    const nextLedgers = [...ledgerEntries, ...newLedgers];
-
-    saveAll(accounts, nextTxs, nextLedgers, importBatches, rawRows, rules, attachments, statements, schedules);
-    return newTx;
   };
 
   const deleteTransaction = async (id: string) => {

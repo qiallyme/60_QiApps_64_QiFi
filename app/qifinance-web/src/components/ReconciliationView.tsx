@@ -28,7 +28,8 @@ export default function ReconciliationView() {
     addManualTransaction,
     attachments,
     addAttachment,
-    deleteAttachment
+    deleteAttachment,
+    financialAccounts
   } = useQiStore();
 
   // Selected statement being reconciled actively
@@ -36,7 +37,7 @@ export default function ReconciliationView() {
 
   // New statement form state
   const [showAddForm, setShowAddForm] = useState(false);
-  const [stmtAccount, setStmtAccount] = useState('assets-checking');
+  const [stmtAccount, setStmtAccount] = useState('');
   const [stmtStart, setStmtStart] = useState('2026-06-01');
   const [stmtEnd, setStmtEnd] = useState('2026-06-30');
   const [stmtOpening, setStmtOpening] = useState('0.00');
@@ -305,15 +306,15 @@ export default function ReconciliationView() {
             {/* Account selection */}
             <div>
               <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Select Account</label>
-              <select
-                value={stmtAccount}
-                onChange={e => setStmtAccount(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-750"
-              >
-                {accounts.filter(a => ['asset', 'liability'].includes(a.type)).map(a => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
+                <select
+                  value={stmtAccount || (financialAccounts.length > 0 ? financialAccounts[0].id : '')}
+                  onChange={e => setStmtAccount(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-750"
+                >
+                  {financialAccounts.map(fa => (
+                    <option key={fa.id} value={fa.id}>{fa.name} ({fa.institution}) - ${fa.currentBalance.toFixed(2)}</option>
+                  ))}
+                </select>
             </div>
             {/* Start Date */}
             <div>

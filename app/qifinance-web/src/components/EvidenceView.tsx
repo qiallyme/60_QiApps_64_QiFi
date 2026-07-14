@@ -22,7 +22,8 @@ export default function EvidenceView() {
     deleteAttachment,
     accounts,
     counterparties,
-    obligations
+    obligations,
+    financialAccounts
   } = useQiStore();
 
   // Tab: 'transactions' | 'accounts' | 'counterparties' | 'obligations'
@@ -320,8 +321,8 @@ export default function EvidenceView() {
               className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none"
             >
               <option value="all">Account: All</option>
-              {accounts.filter(a => ['asset', 'liability'].includes(a.type)).map(a => (
-                <option key={a.id} value={a.id}>{a.name}</option>
+              {financialAccounts.map(fa => (
+                <option key={fa.id} value={fa.id}>{fa.name}</option>
               ))}
             </select>
           </div>
