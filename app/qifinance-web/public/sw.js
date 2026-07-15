@@ -27,7 +27,7 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  if (request.method !== 'GET' || url.pathname.startsWith('/api/') || url.hostname === 'api.fi.qially.com') {
+  if (request.method !== 'GET' || url.pathname.startsWith('/api/') || url.hostname === 'api.fi.qially.com' || url.hostname === 'api.qially.com' || url.hostname.endsWith('workers.dev')) {
     return;
   }
 
