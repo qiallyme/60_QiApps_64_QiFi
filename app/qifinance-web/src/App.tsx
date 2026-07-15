@@ -1,12 +1,18 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { QiProvider, useQiStore } from './store';
 import { qifinanceApi } from './lib/qifinanceApi';
+import { createClient } from '@supabase/supabase-js';
+import { LogOut } from 'lucide-react';
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL || 'https://emnskvvajdlqixwzjfsm.supabase.co',
+  import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtbnNrdnZhamRscWl4d3pqZnNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNjEyMTAsImV4cCI6MjA5NjkzNzIxMH0.7v_iGqu1BtAWYnwzk0x_tjcd4q3-yNxoHfrJW1bW2Sc'
+);
+
+function isJwt(token: string): boolean {
+  return token.startsWith('ey') && token.split('.').length === 3;
+}
 
 // Core Views
 import LedgerView from './components/LedgerView';
@@ -190,7 +196,7 @@ function SidebarAndNav() {
             </Link>
           </div>
 
-          {/* Settings section */}
+          {/* Settings and Sign Out section */}
           <div className="space-y-1.5 pt-2 border-t border-zinc-800/40">
             <Link to="/settings" className={linkClass('/settings')}>
               <div className="flex items-center gap-2.5">
@@ -198,6 +204,19 @@ function SidebarAndNav() {
                 <span>Sovereign Settings</span>
               </div>
             </Link>
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                qifinanceApi.clearAuthToken();
+                window.location.reload();
+              }}
+              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-tight transition-all cursor-pointer hover:bg-rose-950/20 text-zinc-400 hover:text-rose-400 border border-transparent"
+            >
+              <div className="flex items-center gap-2.5">
+                <LogOut size={16} />
+                <span>Lock / Sign Out</span>
+              </div>
+            </button>
           </div>
         </div>
       </aside>
@@ -218,9 +237,22 @@ function SidebarAndNav() {
             </div>
           </div>
           
-          <Link to="/settings" className="text-zinc-400 hover:text-white" title="Settings">
-            <SettingsIcon size={16} />
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link to="/settings" className="text-zinc-400 hover:text-white" title="Settings">
+              <SettingsIcon size={16} />
+            </Link>
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                qifinanceApi.clearAuthToken();
+                window.location.reload();
+              }}
+              className="text-zinc-400 hover:text-rose-400 cursor-pointer"
+              title="Sign Out"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </header>
 
         {/* MAIN VIEW FRAMEWORK */}
@@ -301,26 +333,112 @@ export default function App() {
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const [unlocked, setUnlocked] = React.useState(() => qifinanceApi.hasAuthToken());
-  const [token, setToken] = React.useState('');
-  const [error, setError] = React.useState('');
+  const [mode, setMode] = React.useState<'magic-link' | 'passphrase'>('magic-link');
+  const [email, setEmail] = React.useState('');
+  const [passphrase, setPassphrase] = React.useState('');
+  
+  const [verifying, setVerifying] = React.useState(false);
+  const [authError, setAuthError] = React.useState('');
+  const [authSuccess, setAuthSuccess] = React.useState(false);
   const [isChecking, setIsChecking] = React.useState(false);
+  const [infoMessage, setInfoMessage] = React.useState('');
 
-  const handleSubmit = async (event: React.FormEvent) => {
+  React.useEffect(() => {
+    // 1. Check existing Supabase session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        qifinanceApi.setAuthToken(session.access_token);
+        setUnlocked(true);
+      }
+    });
+
+    // 2. Listen to active auth session changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        qifinanceApi.setAuthToken(session.access_token);
+        setUnlocked(true);
+      } else {
+        const currentToken = qifinanceApi.getAuthToken();
+        if (currentToken && isJwt(currentToken)) {
+          qifinanceApi.clearAuthToken();
+          setUnlocked(false);
+        }
+      }
+    });
+
+    // 3. Handle magic link token_hash verification
+    const params = new URLSearchParams(window.location.search);
+    const token_hash = params.get('token_hash');
+    const type = params.get('type');
+
+    if (token_hash) {
+      setVerifying(true);
+      supabase.auth.verifyOtp({
+        token_hash,
+        type: (type as any) || 'email',
+      }).then(({ data, error }) => {
+        if (error) {
+          setAuthError(error.message);
+        } else {
+          setAuthSuccess(true);
+          if (data.session) {
+            qifinanceApi.setAuthToken(data.session.access_token);
+            setUnlocked(true);
+          }
+          window.history.replaceState({}, document.title, '/');
+        }
+        setVerifying(false);
+      });
+    }
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleMagicLinkSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    const nextToken = token.trim();
+    const nextEmail = email.trim();
+    if (!nextEmail) return;
+
+    setIsChecking(true);
+    setAuthError('');
+    setInfoMessage('');
+
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: nextEmail,
+        options: {
+          emailRedirectTo: window.location.origin,
+        },
+      });
+      if (error) {
+        setAuthError(error.message);
+      } else {
+        setInfoMessage('Check your email for the magic login link!');
+      }
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Failed to send magic link.');
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
+  const handlePassphraseSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const nextToken = passphrase.trim();
     if (!nextToken) return;
 
     setIsChecking(true);
-    setError('');
+    setAuthError('');
+    setInfoMessage('');
     qifinanceApi.setAuthToken(nextToken);
 
     try {
       await qifinanceApi.getState();
       setUnlocked(true);
-      setToken('');
+      setPassphrase('');
     } catch (err) {
       qifinanceApi.clearAuthToken();
-      setError(err instanceof Error ? err.message : 'Could not unlock QiFi.');
+      setAuthError(err instanceof Error ? err.message : 'Could not unlock QiFi.');
     } finally {
       setIsChecking(false);
     }
@@ -328,9 +446,60 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (unlocked) return <>{children}</>;
 
+  if (verifying) {
+    return (
+      <div className="min-h-screen bg-[#090a0f] flex items-center justify-center p-4 text-zinc-200 font-sans">
+        <div className="w-full max-w-sm bg-zinc-900/70 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-4 text-center">
+          <div className="h-12 w-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mx-auto animate-spin">
+            ☯
+          </div>
+          <h1 className="text-base font-bold text-white font-display">Verifying</h1>
+          <p className="text-xs text-zinc-400">Confirming your magic login link...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (authError && !verifying) {
+    return (
+      <div className="min-h-screen bg-[#090a0f] flex items-center justify-center p-4 text-zinc-200 font-sans">
+        <div className="w-full max-w-sm bg-zinc-900/70 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5 text-center">
+          <div className="h-12 w-12 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 mx-auto">
+            <LockKeyhole size={24} />
+          </div>
+          <h1 className="text-base font-bold text-white font-display">Authentication Failed</h1>
+          <p className="text-xs text-rose-300 bg-rose-950/20 border border-rose-900/40 rounded-xl p-3">{authError}</p>
+          <button
+            onClick={() => {
+              setAuthError('');
+              window.history.replaceState({}, document.title, '/');
+            }}
+            className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-sm rounded-xl py-2.5 transition-colors cursor-pointer"
+          >
+            Return to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (authSuccess && !unlocked) {
+    return (
+      <div className="min-h-screen bg-[#090a0f] flex items-center justify-center p-4 text-zinc-200 font-sans">
+        <div className="w-full max-w-sm bg-zinc-900/70 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-4 text-center">
+          <div className="h-12 w-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mx-auto">
+            ✓
+          </div>
+          <h1 className="text-base font-bold text-white font-display">Authorized</h1>
+          <p className="text-xs text-zinc-400">Authentication successful! Loading your account...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#090a0f] flex items-center justify-center p-4 text-zinc-200 font-sans">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm bg-zinc-900/70 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5">
+      <div className="w-full max-w-sm bg-zinc-900/70 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
             <LockKeyhole size={20} />
@@ -341,32 +510,90 @@ function AuthGate({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <label className="block space-y-2">
-          <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Passphrase</span>
-          <input
-            autoFocus
-            type="password"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/60"
-            autoComplete="current-password"
-          />
-        </label>
+        {mode === 'magic-link' ? (
+          <form onSubmit={handleMagicLinkSubmit} className="space-y-4">
+            <label className="block space-y-2">
+              <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Email Address</span>
+              <input
+                autoFocus
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/60"
+                required
+              />
+            </label>
 
-        {error && (
-          <div className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">
-            {error}
-          </div>
+            {infoMessage && (
+              <div className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
+                {infoMessage}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isChecking || !email.trim()}
+              className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-zinc-950 font-bold text-sm rounded-xl py-2.5 transition-colors cursor-pointer"
+            >
+              {isChecking ? 'Sending Link...' : 'Send Magic Link'}
+            </button>
+
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('passphrase');
+                  setAuthError('');
+                  setInfoMessage('');
+                }}
+                className="text-[11px] text-zinc-500 hover:text-emerald-400 transition-colors cursor-pointer"
+              >
+                Or unlock with passphrase
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handlePassphraseSubmit} className="space-y-4">
+            <label className="block space-y-2">
+              <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Passphrase</span>
+              <input
+                autoFocus
+                type="password"
+                placeholder="Legacy access key"
+                value={passphrase}
+                onChange={(event) => setPassphrase(event.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/60"
+                autoComplete="current-password"
+                required
+              />
+            </label>
+
+            <button
+              type="submit"
+              disabled={isChecking || !passphrase.trim()}
+              className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-zinc-950 font-bold text-sm rounded-xl py-2.5 transition-colors cursor-pointer"
+            >
+              {isChecking ? 'Checking...' : 'Unlock'}
+            </button>
+
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('magic-link');
+                  setAuthError('');
+                  setInfoMessage('');
+                }}
+                className="text-[11px] text-zinc-500 hover:text-emerald-400 transition-colors cursor-pointer"
+              >
+                Or sign in via Magic Link
+              </button>
+            </div>
+          </form>
         )}
-
-        <button
-          type="submit"
-          disabled={isChecking || !token.trim()}
-          className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-zinc-950 font-bold text-sm rounded-xl py-2.5 transition-colors"
-        >
-          {isChecking ? 'Checking...' : 'Unlock'}
-        </button>
-      </form>
+      </div>
     </div>
   );
 }
+

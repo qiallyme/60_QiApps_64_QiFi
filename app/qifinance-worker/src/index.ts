@@ -246,14 +246,38 @@ function unauthorized(env: Env): Response {
 }
 
 async function isAuthorized(request: Request, env: Env): Promise<boolean> {
-  if (!env.QIFI_API_TOKEN) return false;
-
   const authHeader = request.headers.get("Authorization") || "";
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   const providedToken = match?.[1]?.trim() || "";
   if (!providedToken) return false;
 
-  return await timingSafeEqual(providedToken, env.QIFI_API_TOKEN);
+  // 1. Static API token fallback check
+  if (env.QIFI_API_TOKEN && providedToken === env.QIFI_API_TOKEN) {
+    return true;
+  }
+
+  // 2. Supabase JWT validation check
+  if (env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+        headers: {
+          "apikey": env.SUPABASE_SERVICE_ROLE_KEY,
+          "Authorization": `Bearer ${providedToken}`
+        }
+      });
+      if (res.ok) {
+        const user = await res.json() as any;
+        if (user && user.id) {
+          console.log(`[Auth] Authorized Supabase user: ${user.email} (${user.id})`);
+          return true;
+        }
+      }
+    } catch (err) {
+      console.error("[Auth Error] Failed to validate token with Supabase:", err);
+    }
+  }
+
+  return false;
 }
 
 async function timingSafeEqual(a: string, b: string): Promise<boolean> {
