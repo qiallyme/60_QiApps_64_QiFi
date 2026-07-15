@@ -2,13 +2,8 @@ import React from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { QiProvider, useQiStore } from './store';
 import { qifinanceApi } from './lib/qifinanceApi';
-import { createClient } from '@supabase/supabase-js';
 import { LogOut } from 'lucide-react';
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL || 'https://emnskvvajdlqixwzjfsm.supabase.co',
-  import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtbnNrdnZhamRscWl4d3pqZnNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNjEyMTAsImV4cCI6MjA5NjkzNzIxMH0.7v_iGqu1BtAWYnwzk0x_tjcd4q3-yNxoHfrJW1bW2Sc'
-);
+import { supabase } from './lib/supabase';
 
 function isJwt(token: string): boolean {
   return token.startsWith('ey') && token.split('.').length === 3;

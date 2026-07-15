@@ -3,8 +3,11 @@
  * Interacts with the Cloudflare Worker Gateway.
  */
 
-const API_BASE_URL = import.meta.env.VITE_QIFINANCE_API_BASE_URL || 'https://api.fi.qially.com';
-const AUTH_STORAGE_KEY = 'qifi_api_token';
+import { supabase } from './supabase';
+
+const API_BASE_URL = import.meta.env.VITE_QIFINANCE_API_BASE_URL || 'https://api.qially.com';
+/** Path prefix for QiFi routes on the central worker */
+const FINANCE_PREFIX = '/api/finance';
 
 export class QiFinanceAuthError extends Error {
   constructor(message: string) {
@@ -13,13 +16,11 @@ export class QiFinanceAuthError extends Error {
   }
 }
 
-function getStoredAuthToken(): string {
-  return localStorage.getItem(AUTH_STORAGE_KEY) || '';
-}
-
-function authHeaders(init?: RequestInit): Headers {
+async function authHeaders(init?: RequestInit): Promise<Headers> {
   const headers = new Headers(init?.headers);
-  const token = getStoredAuthToken();
+  // Get the current Supabase session access token
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token ?? '';
   if (token) headers.set('Authorization', `Bearer ${token}`);
   return headers;
 }
@@ -38,23 +39,23 @@ async function apiError(res: Response, fallback: string): Promise<Error> {
   }
 
   const message = details ? `${fallback}: ${details}` : fallback;
-  if (res.status === 401 || res.status === 403 || (res.status === 503 && details.includes('QIFI_API_TOKEN'))) {
+  if (res.status === 401 || res.status === 403) {
     return new QiFinanceAuthError(message);
   }
   return new Error(message);
 }
 
 async function requestJson<T>(path: string, fallback: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetch(`${API_BASE_URL}${FINANCE_PREFIX}${path}`, {
     ...init,
-    headers: authHeaders(init),
+    headers: await authHeaders(init),
   });
   if (!res.ok) throw await apiError(res, fallback);
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 async function postJson<T>(path: string, body: unknown, fallback: string, init?: RequestInit): Promise<T> {
-  const headers = authHeaders(init);
+  const headers = await authHeaders(init);
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
@@ -67,15 +68,18 @@ async function postJson<T>(path: string, body: unknown, fallback: string, init?:
 }
 
 async function patchJson<T>(path: string, body: unknown, fallback: string): Promise<T> {
+  const headers = await authHeaders();
+  headers.set('Content-Type', 'application/json');
   return requestJson<T>(path, fallback, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
 }
 
 async function deleteJson<T>(path: string, fallback: string): Promise<T> {
-  return requestJson<T>(path, fallback, { method: 'DELETE' });
+  const headers = await authHeaders();
+  return requestJson<T>(path, fallback, { method: 'DELETE', headers });
 }
 
 const idPath = (id: string) => encodeURIComponent(id);
