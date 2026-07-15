@@ -122,6 +122,7 @@ function mapApiTransaction(tx: any): Transaction {
     categoryId: tx.category_id,
     tags: tx.tags || [],
     counterparty: tx.counterparty || '',
+    reconciliationId: tx.reconciliation_id ?? null,
     importBatchId: tx.import_batch_id,
     createdAt: tx.created_at
   };
@@ -213,7 +214,7 @@ function mapApiAttachment(attachment: any): Attachment {
     id: attachment.id,
     transactionId: attachment.transaction_id,
     statementId: attachment.statement_id,
-    accountId: attachment.account_id,
+    accountId: attachment.financial_account_id || attachment.account_id,
     counterpartyId: attachment.counterparty_id,
     obligationId: attachment.obligation_id,
     scheduleId: attachment.schedule_id,

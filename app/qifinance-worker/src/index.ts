@@ -226,7 +226,7 @@ function injectCors(request: Request, response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set("Access-Control-Allow-Origin", allowedOrigin || ALLOWED_ORIGINS[0]);
   headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-OpenAI-API-Key");
   headers.set("Access-Control-Max-Age", "86400");
 
   return new Response(response.body, {
@@ -252,7 +252,7 @@ async function isAuthorized(request: Request, env: Env): Promise<boolean> {
   if (!providedToken) return false;
 
   // 1. Static API token fallback check
-  if (env.QIFI_API_TOKEN && providedToken === env.QIFI_API_TOKEN) {
+  if (env.QIFI_API_TOKEN && await timingSafeEqual(providedToken, env.QIFI_API_TOKEN)) {
     return true;
   }
 
@@ -1865,6 +1865,7 @@ function mapTransactionInput(body: JsonRecord, isUpdate = false): JsonRecord {
     tags: body.tags ?? [],
     category_id: body.categoryId ?? body.category_id ?? null,
     counterparty,
+    reconciliation_id: body.reconciliationId ?? body.reconciliation_id,
     import_batch_id: importBatchId,
     raw_row_id: rawRowId,
     classification_status: body.classificationStatus ?? body.classification_status ?? (isUpdate ? undefined : "classified"),

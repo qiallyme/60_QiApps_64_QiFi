@@ -6,8 +6,11 @@
 import { supabase } from './supabase';
 
 const API_BASE_URL = import.meta.env.VITE_QIFINANCE_API_BASE_URL || 'https://api.qially.com';
-/** Path prefix for QiFi routes on the central worker */
-const FINANCE_PREFIX = '/api/finance';
+const AUTH_STORAGE_KEY = 'qifi_api_token';
+
+function getStoredAuthToken(): string {
+  return localStorage.getItem(AUTH_STORAGE_KEY)?.trim() || '';
+}
 
 export class QiFinanceAuthError extends Error {
   constructor(message: string) {
@@ -46,7 +49,7 @@ async function apiError(res: Response, fallback: string): Promise<Error> {
 }
 
 async function requestJson<T>(path: string, fallback: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${FINANCE_PREFIX}${path}`, {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: await authHeaders(init),
   });
