@@ -190,7 +190,7 @@ export default {
           hasSupabaseUrl: Boolean(env.SUPABASE_URL),
           hasServiceRoleKey: Boolean(env.SUPABASE_SERVICE_ROLE_KEY),
           hasOpenAiKey: Boolean(env.OPENAI_API_KEY),
-          openAiModel: env.OPENAI_MODEL || "gpt-4.1-mini",
+          openAiModel: env.OPENAI_MODEL || "gpt-5.4-mini",
           supabaseUrlHost: host
         });
       } else {
@@ -570,7 +570,7 @@ async function handleAssistant(request: Request, env: Env): Promise<Response> {
     errorCount,
     warnings,
     actions: results,
-    model: env.OPENAI_MODEL || "gpt-4.1-mini"
+    model: env.OPENAI_MODEL || "gpt-5.4-mini"
   }, errorCount > 0 && createdCount === 0 ? 422 : 200);
 }
 
@@ -629,8 +629,7 @@ async function planAssistantActions(env: Env, message: string, context: Assistan
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: env.OPENAI_MODEL || "gpt-4.1-mini",
-      temperature: 0,
+      model: env.OPENAI_MODEL || "gpt-5.4-mini",
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: ASSISTANT_SYSTEM_PROMPT },
