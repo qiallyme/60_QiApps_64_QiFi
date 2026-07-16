@@ -4,6 +4,7 @@ import { QiProvider, useQiStore } from './store';
 import { qifinanceApi } from './lib/qifinanceApi';
 import { LogOut, MessageCircle, X } from 'lucide-react';
 import { supabase } from './lib/supabase';
+import { isDynamicImportError, lazyWithChunkRecovery, reloadLatestQiFiVersion } from './lib/chunkRecovery';
 
 function isJwt(token: string): boolean {
   return token.startsWith('ey') && token.split('.').length === 3;
@@ -15,7 +16,8 @@ class WorkspaceErrorBoundary extends React.Component<{ children: React.ReactNode
   componentDidCatch(error: Error, info: React.ErrorInfo) { console.error('[QiFi UI crash]', error, info); }
   render() {
     if (!this.state.error) return this.props.children;
-    return <div className="m-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-rose-100"><h2 className="font-bold">This screen could not render</h2><p className="mt-2 text-sm text-rose-200">Your financial data was not deleted. Reload the screen to recover.</p><pre className="mt-3 overflow-auto text-[10px] text-rose-300">{this.state.error.message}</pre><button onClick={() => { this.setState({ error: null }); window.location.reload(); }} className="mt-4 rounded-xl bg-rose-500 px-4 py-2 text-xs font-bold text-white">Reload safely</button></div>;
+    const staleVersion = isDynamicImportError(this.state.error);
+    return <div className="m-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-rose-100"><h2 className="font-bold">This screen could not render</h2><p className="mt-2 text-sm text-rose-200">Your financial data was not deleted. {staleVersion ? 'QiFi found an outdated app file and can load the latest version.' : 'Reload the screen to recover.'}</p><pre className="mt-3 overflow-auto text-[10px] text-rose-300">{this.state.error.message}</pre><button onClick={() => { if (staleVersion) void reloadLatestQiFiVersion(); else { this.setState({ error: null }); window.location.reload(); } }} className="mt-4 rounded-xl bg-rose-500 px-4 py-2 text-xs font-bold text-white">{staleVersion ? 'Load latest QiFi version' : 'Reload safely'}</button></div>;
   }
 }
 
@@ -30,19 +32,19 @@ function getAuthRedirectUrl(): string {
 
 // Core Views
 import AssistantView from './components/AssistantView';
-const LedgerView = React.lazy(() => import('./components/LedgerView'));
-const ReviewQueueView = React.lazy(() => import('./components/ReviewQueueView'));
-const ImportView = React.lazy(() => import('./components/ImportView'));
-const ChartOfAccountsView = React.lazy(() => import('./components/ChartOfAccountsView'));
-const EvidenceView = React.lazy(() => import('./components/EvidenceView'));
-const ReconciliationView = React.lazy(() => import('./components/ReconciliationView'));
-const ForecastView = React.lazy(() => import('./components/ForecastView'));
-const CounterpartyView = React.lazy(() => import('./components/CounterpartyView'));
-const AccountabilityView = React.lazy(() => import('./components/AccountabilityView'));
-const ReportsView = React.lazy(() => import('./components/ReportsView'));
-const SettingsView = React.lazy(() => import('./components/SettingsView'));
-const CategoryRulesView = React.lazy(() => import('./components/CategoryRulesView'));
-const FinancialAccountsView = React.lazy(() => import('./components/FinancialAccountsView'));
+const LedgerView = lazyWithChunkRecovery(() => import('./components/LedgerView'));
+const ReviewQueueView = lazyWithChunkRecovery(() => import('./components/ReviewQueueView'));
+const ImportView = lazyWithChunkRecovery(() => import('./components/ImportView'));
+const ChartOfAccountsView = lazyWithChunkRecovery(() => import('./components/ChartOfAccountsView'));
+const EvidenceView = lazyWithChunkRecovery(() => import('./components/EvidenceView'));
+const ReconciliationView = lazyWithChunkRecovery(() => import('./components/ReconciliationView'));
+const ForecastView = lazyWithChunkRecovery(() => import('./components/ForecastView'));
+const CounterpartyView = lazyWithChunkRecovery(() => import('./components/CounterpartyView'));
+const AccountabilityView = lazyWithChunkRecovery(() => import('./components/AccountabilityView'));
+const ReportsView = lazyWithChunkRecovery(() => import('./components/ReportsView'));
+const SettingsView = lazyWithChunkRecovery(() => import('./components/SettingsView'));
+const CategoryRulesView = lazyWithChunkRecovery(() => import('./components/CategoryRulesView'));
+const FinancialAccountsView = lazyWithChunkRecovery(() => import('./components/FinancialAccountsView'));
 
 import { 
   TrendingUp, Inbox, Sparkles, Layers, BookOpen, WalletCards,

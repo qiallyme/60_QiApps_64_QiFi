@@ -11,8 +11,10 @@ createRoot(document.getElementById('root')!).render(
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((error) => {
-      console.warn('QiFi service worker registration failed:', error);
-    });
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+      .then((registration) => registration.update())
+      .catch((error) => {
+        console.warn('QiFi service worker registration failed:', error);
+      });
   });
 }

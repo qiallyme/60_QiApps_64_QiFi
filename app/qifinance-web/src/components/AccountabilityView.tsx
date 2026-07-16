@@ -112,6 +112,7 @@ export default function AccountabilityView() {
     }
     return '';
   });
+  const [oblIncurredDate, setOblIncurredDate] = useState(new Date().toISOString().slice(0, 10));
 
   const [isDraftSaved, setIsDraftSaved] = useState(false);
 
@@ -121,6 +122,7 @@ export default function AccountabilityView() {
       oblCpId ||
       oblDesc ||
       oblDueDate ||
+      oblIncurredDate !== new Date().toISOString().slice(0, 10) ||
       oblType !== 'owed_to_me'
     );
 
@@ -131,6 +133,7 @@ export default function AccountabilityView() {
         oblType,
         oblDesc,
         oblDueDate
+        , oblIncurredDate
       };
       localStorage.setItem('qifi_draft_obligation_global', JSON.stringify(draft));
       setIsDraftSaved(true);
@@ -138,7 +141,7 @@ export default function AccountabilityView() {
       localStorage.removeItem('qifi_draft_obligation_global');
       setIsDraftSaved(false);
     }
-  }, [oblAmount, oblCpId, oblType, oblDesc, oblDueDate]);
+  }, [oblAmount, oblCpId, oblType, oblDesc, oblDueDate, oblIncurredDate]);
 
   // Map counterparties by id for quick name lookups
   const cpMap = useMemo(() => {
@@ -196,6 +199,7 @@ export default function AccountabilityView() {
       type: oblType,
       description: oblDesc.trim(),
       dueDate: oblDueDate || undefined,
+      incurredDate: oblIncurredDate,
       status: 'active',
       transactionId: null
     });
@@ -205,6 +209,7 @@ export default function AccountabilityView() {
     setOblType('owed_to_me');
     setOblDesc('');
     setOblDueDate('');
+    setOblIncurredDate(new Date().toISOString().slice(0, 10));
     localStorage.removeItem('qifi_draft_obligation_global');
     setIsDraftSaved(false);
     setShowAddForm(false);
@@ -285,7 +290,7 @@ export default function AccountabilityView() {
             <PlusCircle size={16} className="text-emerald-400" />
             Record Accountability entry
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
             {/* Counterparty */}
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Select Partner</label>
@@ -336,6 +341,12 @@ export default function AccountabilityView() {
 
             {/* Due date */}
             <div>
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Date Incurred</label>
+              <input required type="date" value={oblIncurredDate} onChange={e => setOblIncurredDate(e.target.value)} className="w-full bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white font-mono" />
+            </div>
+
+            {/* Due date */}
+            <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Due Date (Optional)</label>
               <input
                 type="date"
@@ -373,6 +384,7 @@ export default function AccountabilityView() {
                 setOblType('owed_to_me');
                 setOblDesc('');
                 setOblDueDate('');
+                setOblIncurredDate(new Date().toISOString().slice(0, 10));
                 localStorage.removeItem('qifi_draft_obligation_global');
                 setIsDraftSaved(false);
                 setShowAddForm(false);

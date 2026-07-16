@@ -158,6 +158,7 @@ export default function CounterpartyView() {
     }
     return '';
   });
+  const [oblIncurredDate, setOblIncurredDate] = useState(new Date().toISOString().slice(0, 10));
 
   const [isPartnerDraftSaved, setIsPartnerDraftSaved] = useState(false);
   const [isOblDraftSaved, setIsOblDraftSaved] = useState(false);
@@ -324,6 +325,7 @@ export default function CounterpartyView() {
       type: oblType,
       description: oblDesc.trim(),
       dueDate: oblDueDate || undefined,
+      incurredDate: oblIncurredDate,
       status: 'active',
       transactionId: null
     });
@@ -332,6 +334,7 @@ export default function CounterpartyView() {
     setOblType('owed_to_me');
     setOblDesc('');
     setOblDueDate('');
+    setOblIncurredDate(new Date().toISOString().slice(0, 10));
     localStorage.removeItem('qifi_draft_obligation_cp');
     setIsOblDraftSaved(false);
     setShowOblForm(false);

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'qifi-shell-v4';
+const CACHE_NAME = 'qifi-shell-v5';
 const SHELL_ASSETS = [
   '/manifest.webmanifest',
   '/qifi-icon-192.png',
@@ -32,10 +32,12 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: 'no-store' })
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('/offline-shell', copy));
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put('/offline-shell', copy));
+          }
           return response;
         })
         .catch(() => caches.match('/offline-shell') || Response.error())
@@ -47,8 +49,10 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
           return response;
         })
         .catch(() => caches.match(request).then((cached) => cached || Response.error()))
