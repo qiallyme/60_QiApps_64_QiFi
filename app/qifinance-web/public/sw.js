@@ -1,10 +1,10 @@
-const CACHE_NAME = 'qifi-shell-v2';
+const CACHE_NAME = 'qifi-shell-v3';
 const SHELL_ASSETS = [
   '/',
   '/manifest.webmanifest',
-  '/icons/qifi-icon-192.png',
-  '/icons/qifi-icon-512.png',
-  '/icons/qifi-maskable-512.png'
+  '/qifi-icon-192.png',
+  '/qifi-icon-512.png',
+  '/qifi-maskable-512.png'
 ];
 
 self.addEventListener('install', (event) => {

@@ -10,7 +10,7 @@ import {
   Search, Filter, CheckCircle, AlertCircle, FileText, 
   HelpCircle, ChevronDown, ChevronUp, Trash2, Calendar, 
   ArrowUpRight, ArrowDownLeft, Tag, DollarSign, RefreshCw, Plus, X, Edit2,
-  Download, Upload
+  Download, Upload, WandSparkles
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
@@ -28,7 +28,9 @@ export default function LedgerView() {
     updateTransaction,
     exportData,
     importData,
-    financialAccounts
+    financialAccounts,
+    rules,
+    addRule
   } = useQiStore();
 
   const { pathname } = useLocation();
@@ -933,6 +935,9 @@ export default function LedgerView() {
               const hasReceipt = attachments.some(a => a.transactionId === tx.id);
               const txLedgers = ledgerEntries.filter(le => le.transactionId === tx.id);
               const srcAccount = accounts.find(a => a.id === tx.sourceAccountId);
+              const categoryLine = txLedgers.find(line => line.accountId !== srcAccount?.id && line.accountId !== srcAccount?.defaultLedgerAccountId);
+              const suggestedPattern = (tx.counterparty || tx.description).trim().toLowerCase().split(/\s+/).slice(0, 3).join(' ');
+              const matchingRule = rules.some(rule => rule.pattern.toLowerCase() === suggestedPattern);
 
               return (
                 <div key={tx.id} className="transition-all hover:bg-zinc-900/30">
@@ -1011,6 +1016,7 @@ export default function LedgerView() {
                   {/* Expanded Double Entry Account Ledgers (Balanced Debits & Credits) */}
                   {isExpanded && (
                     <div className="px-5 pb-4 pt-1 bg-zinc-950/60 border-t border-dashed border-zinc-800/60 animate-fadeIn space-y-3">
+                      {!matchingRule && suggestedPattern && categoryLine && <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3"><div><p className="text-xs font-bold text-violet-300 flex items-center gap-1.5"><WandSparkles size={13}/>Suggested rule</p><p className="text-[10px] text-zinc-500">Match “{suggestedPattern}” to {accounts.find(account => account.id === categoryLine.accountId)?.name || categoryLine.accountId}. You can edit it later in Category Rules.</p></div><button onClick={(event) => { event.stopPropagation(); addRule({ pattern: suggestedPattern, suggestedAccountId: categoryLine.accountId, suggestedTags: tx.tags, suggestedCounterparty: tx.counterparty, description: `Suggested from ${tx.description}` }); }} className="rounded-lg bg-violet-500/15 border border-violet-500/30 px-3 py-1.5 text-[10px] font-bold text-violet-300">Add rule</button></div>}
                       {/* Double Entry Ledger Details */}
                       <div className="rounded-xl border border-zinc-850 bg-zinc-900/40 overflow-hidden max-w-3xl">
                         <div className="px-3 py-1.5 bg-zinc-900 text-[10px] font-bold text-zinc-400 uppercase tracking-wider grid grid-cols-12 gap-2 border-b border-zinc-850">

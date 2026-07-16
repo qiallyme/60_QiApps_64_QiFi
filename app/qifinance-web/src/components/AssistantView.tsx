@@ -5,7 +5,7 @@ import { useQiStore } from '../store';
 
 interface ChatMessage { id: string; role: 'assistant' | 'user'; content: string; plan?: AssistantResponse; isError?: boolean }
 
-export default function AssistantView() {
+export default function AssistantView({ pageContext }: { pageContext?: string }) {
   const { refreshData } = useQiStore();
   const [draft, setDraft] = React.useState('');
   const [threadId, setThreadId] = React.useState<string>();
@@ -27,7 +27,7 @@ export default function AssistantView() {
     if (!message || busy) return;
     setMessages((current) => [...current, { id: `user-${Date.now()}`, role: 'user', content: message }]);
     setDraft(''); setBusy(true);
-    try { addPlan(await qifinanceApi.askAssistant(message, threadId)); }
+    try { addPlan(await qifinanceApi.askAssistant(pageContext ? `[Current screen: ${pageContext}] ${message}` : message, threadId)); }
     catch (error) { setMessages((current) => [...current, { id: `error-${Date.now()}`, role: 'assistant', content: error instanceof Error ? error.message : 'Qi Assistant failed.', isError: true }]); }
     finally { setBusy(false); }
   };

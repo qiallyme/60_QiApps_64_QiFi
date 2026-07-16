@@ -80,6 +80,7 @@ export interface Transaction {
   counterparty: string;
   reconciliationId?: string | null; // Statement ID or null
   importBatchId?: string | null;
+  classificationStatus?: 'unclassified' | 'suggested' | 'classified' | 'needs_review';
   createdAt: string;
 }
 

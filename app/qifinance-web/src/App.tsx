@@ -2,7 +2,7 @@ import React from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { QiProvider, useQiStore } from './store';
 import { qifinanceApi } from './lib/qifinanceApi';
-import { LogOut } from 'lucide-react';
+import { LogOut, MessageCircle, X } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 function isJwt(token: string): boolean {
@@ -46,6 +46,14 @@ function SidebarAndNav() {
 
   const pendingCount = rawRows.filter(r => r.status === 'pending').length;
   const currentPath = location.pathname;
+  const [assistantOpen, setAssistantOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    const theme = localStorage.getItem('qifi_theme') || 'dark';
+    const accent = localStorage.getItem('qifi_accent') || 'emerald';
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.accent = accent;
+  }, []);
 
   // Helper to check active state for style classes
   const isActive = (path: string) => {
@@ -160,9 +168,9 @@ function SidebarAndNav() {
             </Link>
           </div>
 
-          {/* Parties Section */}
+          {/* Counterparties Section */}
           <div className="space-y-1.5">
-            <span className="text-[9px] uppercase font-bold text-zinc-600 font-mono tracking-wider px-3.5 block">Parties & Audits</span>
+            <span className="text-[9px] uppercase font-bold text-zinc-600 font-mono tracking-wider px-3.5 block">Counterparties & Audits</span>
 
             <Link to="/counterparties" className={linkClass('/counterparties')}>
               <div className="flex items-center gap-2.5">
@@ -260,7 +268,7 @@ function SidebarAndNav() {
         </header>
 
         {/* MAIN VIEW FRAMEWORK */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 pb-20 md:pb-6 max-w-5xl">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-5 pb-20 md:pb-6 w-full max-w-7xl">
           <div className="animate-fadeIn">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -310,13 +318,17 @@ function SidebarAndNav() {
           </Link>
           <Link to="/counterparties" className={`flex flex-col items-center gap-1 transition-all ${isActive('/counterparties') ? 'text-emerald-400' : 'text-zinc-500'}`}>
             <Users size={18} />
-            <span className="text-[9px] font-semibold">Partners</span>
+            <span className="text-[9px] font-semibold">Counterparties</span>
           </Link>
           <Link to="/reports" className={`flex flex-col items-center gap-1 transition-all ${isActive('/reports') ? 'text-emerald-400' : 'text-zinc-500'}`}>
             <BarChart2 size={18} />
             <span className="text-[9px] font-semibold">Reports</span>
           </Link>
         </nav>
+        {currentPath !== '/assistant' && <>
+          <button onClick={() => setAssistantOpen(true)} className="fixed right-4 bottom-20 md:bottom-6 z-40 h-12 w-12 rounded-full bg-emerald-500 text-zinc-950 shadow-2xl shadow-emerald-950/50 flex items-center justify-center hover:scale-105 transition-transform" title="Ask Qi about this page"><MessageCircle size={21}/></button>
+          {assistantOpen && <div className="fixed inset-0 z-[70] bg-black/55 backdrop-blur-sm flex justify-end" onClick={() => setAssistantOpen(false)}><section className="h-full w-full sm:max-w-xl bg-[#090a0f] border-l border-zinc-800 p-4 sm:p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between mb-2"><div><p className="text-xs font-bold text-emerald-400">Qi knows your current screen</p><p className="text-[10px] text-zinc-500">Context: {currentPath}</p></div><button onClick={() => setAssistantOpen(false)} className="p-2 rounded-lg bg-zinc-900 text-zinc-400 hover:text-white"><X size={16}/></button></div><AssistantView pageContext={currentPath}/></section></div>}
+        </>}
       </div>
 
     </div>

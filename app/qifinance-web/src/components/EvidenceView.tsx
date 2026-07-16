@@ -7,6 +7,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { useQiStore } from '../store';
 import { Transaction, Attachment, Account, Counterparty, AccountabilityObligation } from '../types';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
+import { qifinanceApi } from '../lib/qifinanceApi';
 import { 
   FileText, ShieldAlert, CheckCircle, Upload, Trash2, 
   Eye, Image as ImageIcon, Calendar, Plus, Tag, HelpCircle, 
@@ -362,7 +363,7 @@ export default function EvidenceView() {
                       <td className="py-3.5 px-4">
                         {hasReceipt ? (
                           <div className="flex items-center justify-between gap-2 bg-emerald-950/20 border border-emerald-900/30 py-1 px-2.5 rounded-lg">
-                            <span className="text-emerald-400 font-bold truncate max-w-[150px]">{txAttachments[0].fileName}</span>
+                            <span className="flex items-center gap-2 min-w-0"><AttachmentThumbnail attachment={txAttachments[0]}/><span className="text-emerald-400 font-bold truncate max-w-[150px]">{txAttachments[0].fileName}</span></span>
                             <div className="flex gap-1.5 shrink-0">
                               <button onClick={() => setViewingAttachment(txAttachments[0])} className="p-1 hover:text-white text-zinc-400 cursor-pointer"><Eye size={12} /></button>
                               <button onClick={() => deleteAttachment(txAttachments[0].id)} className="p-1 hover:text-rose-400 text-zinc-400 cursor-pointer"><Trash2 size={12} /></button>
@@ -410,7 +411,7 @@ export default function EvidenceView() {
               const acc = accounts.find(ac => ac.id === a.accountId);
               return (
                 <div key={a.id} className="bg-zinc-900/40 p-4 border border-zinc-800/80 rounded-xl flex justify-between items-center">
-                  <div className="min-w-0 space-y-1">
+                  <AttachmentThumbnail attachment={a}/><div className="min-w-0 space-y-1 flex-1 ml-3">
                     <span className="text-xs font-semibold text-zinc-200 block truncate">{a.fileName}</span>
                     <div className="flex gap-1.5 text-[9px] text-zinc-500 font-mono">
                       <span>Account: {acc?.name}</span>
@@ -443,7 +444,7 @@ export default function EvidenceView() {
               const cp = counterparties.find(c => c.id === a.counterpartyId);
               return (
                 <div key={a.id} className="bg-zinc-900/40 p-4 border border-zinc-800/80 rounded-xl flex justify-between items-center">
-                  <div className="min-w-0 space-y-1">
+                  <AttachmentThumbnail attachment={a}/><div className="min-w-0 space-y-1 flex-1 ml-3">
                     <span className="text-xs font-semibold text-zinc-200 block truncate">{a.fileName}</span>
                     <div className="flex gap-1.5 text-[9px] text-zinc-500 font-mono">
                       <span>Partner: {cp?.name}</span>
@@ -477,7 +478,7 @@ export default function EvidenceView() {
               const cp = obl ? counterparties.find(c => c.id === obl.counterpartyId) : null;
               return (
                 <div key={a.id} className="bg-zinc-900/40 p-4 border border-zinc-800/80 rounded-xl flex justify-between items-center">
-                  <div className="min-w-0 space-y-1">
+                  <AttachmentThumbnail attachment={a}/><div className="min-w-0 space-y-1 flex-1 ml-3">
                     <span className="text-xs font-semibold text-zinc-200 block truncate">{a.fileName}</span>
                     <div className="flex gap-1.5 text-[9px] text-zinc-500 font-mono">
                       <span>Obligation: {cp?.name || 'Partner'} (${obl?.amount})</span>
@@ -501,4 +502,14 @@ export default function EvidenceView() {
 
     </div>
   );
+}
+
+function AttachmentThumbnail({ attachment }: { attachment: Attachment }) {
+  const [url, setUrl] = React.useState(attachment.dataUrl || '');
+  React.useEffect(() => {
+    if (url || !attachment.fileType.startsWith('image/')) return;
+    qifinanceApi.getAttachmentUrl(attachment.id).then(result => setUrl(result.url)).catch(() => undefined);
+  }, [attachment.id, attachment.fileType, url]);
+  if (attachment.fileType.startsWith('image/') && url) return <img src={url} alt="" className="h-10 w-10 rounded-lg object-cover border border-zinc-700 shrink-0"/>;
+  return <span className="h-10 w-10 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-center shrink-0"><FileText size={15} className="text-zinc-500"/></span>;
 }

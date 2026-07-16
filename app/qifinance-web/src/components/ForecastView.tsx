@@ -50,6 +50,11 @@ export default function ForecastView() {
     addAttachment,
     financialAccounts
   } = useQiStore();
+  const [forecastAccountId, setForecastAccountId] = useState(() => financialAccounts[0]?.id || '');
+
+  React.useEffect(() => {
+    if (!forecastAccountId && financialAccounts[0]) setForecastAccountId(financialAccounts[0].id);
+  }, [financialAccounts, forecastAccountId]);
 
   // Quick Actions modal states
   const [quickModal, setQuickModal] = useState<'transaction' | 'bill' | 'account' | 'category' | 'counterparty' | null>(null);
@@ -336,7 +341,7 @@ export default function ForecastView() {
         if (parsed.newSchedDate) return parsed.newSchedDate;
       } catch (e) {}
     }
-    return '2026-07-01';
+    return new Date().toISOString().split('T')[0];
   });
 
   const [newSchedTags, setNewSchedTags] = useState(() => {
@@ -360,7 +365,7 @@ export default function ForecastView() {
       newSchedCat !== 'expenses-software' ||
       newSchedSource !== '' ||
       newSchedFreq !== 'monthly' ||
-      newSchedDate !== '2026-07-01'
+      newSchedDate !== new Date().toISOString().split('T')[0]
     );
 
     if (hasValue) {
@@ -381,15 +386,18 @@ export default function ForecastView() {
     }
   }, [newSchedName, newSchedAmount, newSchedCat, newSchedSource, newSchedFreq, newSchedDate, newSchedTags]);
 
-  // Checking Account starting balance
+  // Selected financial account starting balance
   const currentCheckingBalance = useMemo(() => {
-    return getAccountBalance('assets-checking');
-  }, [getAccountBalance]);
+    const financial = financialAccounts.find(account => account.id === forecastAccountId);
+    if (!financial) return 0;
+    return Number.isFinite(financial.currentBalance) ? financial.currentBalance : getAccountBalance(financial.defaultLedgerAccountId || '');
+  }, [financialAccounts, forecastAccountId, getAccountBalance]);
 
   // Compute 90-Day Projected Rollforward Timeline
   const projectedTimeline = useMemo(() => {
-    const today = new Date('2026-06-30'); // Anchor current date
-    const days90Limit = new Date('2026-06-30');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days90Limit = new Date(today);
     days90Limit.setDate(days90Limit.getDate() + 90);
 
     // Occurrences mapper
@@ -419,7 +427,7 @@ export default function ForecastView() {
     };
 
     // Flatten all active checking occurrences
-    const activeCheckingSchedules = schedules.filter(s => s.isActive && s.sourceAccountId === 'assets-checking');
+    const activeCheckingSchedules = schedules.filter(s => s.isActive && s.sourceAccountId === forecastAccountId);
     const allOccurrences = activeCheckingSchedules.flatMap(s => getOccurrences(s, days90Limit));
 
     // Sort chronologically
@@ -449,11 +457,12 @@ export default function ForecastView() {
     });
 
     return timelineSteps;
-  }, [schedules, currentCheckingBalance, accounts]);
+  }, [schedules, currentCheckingBalance, accounts, forecastAccountId]);
 
   // Group forecast steps by buckets: 30, 60, 90 days
   const forecastBuckets = useMemo(() => {
-    const today = new Date('2026-06-30');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     
     const steps30: typeof projectedTimeline = [];
     const steps60: typeof projectedTimeline = [];
@@ -516,6 +525,7 @@ export default function ForecastView() {
       <div className="bg-zinc-900/40 text-zinc-100 p-5 rounded-2xl border border-zinc-800/80 shadow-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 backdrop-blur-sm">
         <div>
           <span className="text-[10px] uppercase font-bold text-zinc-400 font-mono tracking-wider">Cash & Bank Balance</span>
+          <select value={forecastAccountId} onChange={(event) => setForecastAccountId(event.target.value)} className="ml-3 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-[10px] text-zinc-300">{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}</option>)}</select>
           <div className="text-3xl font-extrabold tracking-tight font-mono text-white mt-1">
             ${currentCheckingBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
           </div>
@@ -1023,7 +1033,7 @@ export default function ForecastView() {
 
       {/* NEW SCHEDULE POPUP FORM */}
       {showAddForm && (
-        <form onSubmit={handleSubmit} className="bg-zinc-900/60 p-6 rounded-2xl border border-zinc-800/80 shadow-2xl backdrop-blur-md space-y-4 animate-fadeIn">
+        <form onSubmit={handleSubmit} className="fixed z-[80] inset-x-3 sm:inset-x-8 top-16 sm:top-24 mx-auto max-w-3xl max-h-[80vh] overflow-y-auto bg-zinc-900 p-5 sm:p-6 rounded-2xl border border-zinc-700 shadow-2xl backdrop-blur-xl space-y-4 animate-fadeIn">
           <h3 className="font-semibold text-zinc-100 text-sm flex items-center gap-1.5">
             <PlusCircle size={16} className="text-emerald-400" />
             Set Up Recurring Money Schedule
@@ -1134,9 +1144,9 @@ export default function ForecastView() {
                 setNewSchedName('');
                 setNewSchedAmount('');
                 setNewSchedTags('');
-                setNewSchedDate('2026-07-01');
+                setNewSchedDate(new Date().toISOString().split('T')[0]);
                 setNewSchedCat('expenses-software');
-                setNewSchedSource('assets-checking');
+                setNewSchedSource(forecastAccountId);
                 setNewSchedFreq('monthly');
                 localStorage.removeItem('qifi_draft_schedule');
                 setIsDraftSaved(false);

@@ -11,7 +11,7 @@ import {
   Users, User, Building2, Search, PlusCircle, ArrowLeft, 
   ArrowUpRight, ArrowDownLeft, Tag, FileText, Calendar, 
   Trash2, Edit, AlertCircle, CheckCircle, Plus, Sparkles,
-  Upload, Eye, X, Check
+  Upload, Eye, X, Check, LayoutGrid, Table
 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 
@@ -38,6 +38,7 @@ export default function CounterpartyView() {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [listView, setListView] = useState<'cards' | 'table'>(() => (localStorage.getItem('qifi_counterparty_view') as 'cards' | 'table') || 'cards');
   const [showAddForm, setShowAddForm] = useState(() => {
     return !!localStorage.getItem('qifi_draft_partner');
   });
@@ -787,7 +788,7 @@ export default function CounterpartyView() {
             </div>
             
             <label className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 hover:border-emerald-500/40 text-zinc-400 hover:text-emerald-400 px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all">
-              <Upload size={12} /> Upload Agreement File
+              <Upload size={12} /> Add Files
               <input 
                 type="file" 
                 ref={fileInputRef}
@@ -1001,7 +1002,7 @@ export default function CounterpartyView() {
       )}
 
       {/* Search Filter bar */}
-      <div className="relative">
+      <div className="flex gap-2"><div className="relative flex-1">
         <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-zinc-500">
           <Search size={14} />
         </span>
@@ -1012,10 +1013,12 @@ export default function CounterpartyView() {
           onChange={e => setSearchTerm(e.target.value)}
           className="w-full bg-zinc-900/30 border border-zinc-800/80 rounded-xl pl-9 pr-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700 backdrop-blur-sm"
         />
-      </div>
+      </div><div className="inline-flex rounded-xl border border-zinc-800 p-1 bg-zinc-900/30"><button onClick={() => { setListView('cards'); localStorage.setItem('qifi_counterparty_view','cards'); }} className={`p-2 rounded-lg ${listView === 'cards' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-500'}`} title="Card view"><LayoutGrid size={14}/></button><button onClick={() => { setListView('table'); localStorage.setItem('qifi_counterparty_view','table'); }} className={`p-2 rounded-lg ${listView === 'table' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-500'}`} title="Table view"><Table size={14}/></button></div></div>
+
+      {listView === 'table' && <div className="overflow-x-auto rounded-2xl border border-zinc-800"><table className="w-full text-left text-xs"><thead className="bg-zinc-950 text-zinc-500 uppercase text-[10px]"><tr><th className="p-3">Counterparty</th><th className="p-3">Type</th><th className="p-3">Relationship</th><th className="p-3 text-right">Money in</th><th className="p-3 text-right">Money out</th><th className="p-3 text-right">Net owed</th></tr></thead><tbody className="divide-y divide-zinc-800">{filteredCPs.map(cp => <tr key={cp.id} onClick={() => navigate(`/counterparties/${cp.id}`)} className="hover:bg-zinc-900/60 cursor-pointer"><td className="p-3 font-bold text-zinc-200">{cp.name}</td><td className="p-3 text-zinc-400">{cp.isBusiness ? 'Business' : 'Personal'}</td><td className="p-3 text-zinc-400">{cp.relationshipType || 'Other'}</td><td className="p-3 text-right font-mono">${cp.moneyIn.toFixed(2)}</td><td className="p-3 text-right font-mono">${cp.moneyOut.toFixed(2)}</td><td className="p-3 text-right font-mono">${cp.netOwed.toFixed(2)}</td></tr>)}</tbody></table></div>}
 
       {/* Profiles Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {listView === 'cards' && <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
         {filteredCPs.length === 0 ? (
           <div className="col-span-full py-16 border border-dashed border-zinc-800/80 rounded-2xl text-center bg-zinc-900/10 backdrop-blur-sm">
             <Users size={32} className="mx-auto text-zinc-600 mb-2.5" />
@@ -1130,7 +1133,7 @@ export default function CounterpartyView() {
             );
           })
         )}
-      </div>
+      </div>}
     </div>
   );
 }

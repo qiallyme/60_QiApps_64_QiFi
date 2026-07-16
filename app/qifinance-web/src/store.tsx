@@ -124,6 +124,7 @@ function mapApiTransaction(tx: any): Transaction {
     counterparty: tx.counterparty || '',
     reconciliationId: tx.reconciliation_id ?? null,
     importBatchId: tx.import_batch_id,
+    classificationStatus: tx.classification_status,
     createdAt: tx.created_at
   };
 }
@@ -1120,6 +1121,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         counterparty: tx.counterparty,
         reconciliationId: tx.reconciliationId,
         importBatchId: tx.importBatchId,
+        classificationStatus: categoryAccountId === 'suspense-uncategorized' ? 'needs_review' : 'classified',
         categoryAccountId
       } as any);
       await refreshApiState();

@@ -157,6 +157,7 @@ export interface Transaction {
   created_at: string;
   import_status: string;
   classification_status: string;
+  classificationStatus?: string;
   ledger_status: string;
   source_metadata?: any;
 }

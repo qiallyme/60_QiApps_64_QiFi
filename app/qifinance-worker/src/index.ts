@@ -131,6 +131,7 @@ const ALLOWED_ASSISTANT_ACTIONS = new Set([
 
 const ASSISTANT_SYSTEM_PROMPT = `
 You are QiFi's private finance operations planner. Inspect the supplied accounts, ledger accounts, categories, counterparties, rules, recent transactions, and conversation before proposing changes. Never execute anything yourself.
+For read-only questions, answer directly and accurately in summary using the supplied existingData, return questions [] and steps []. You can list, count, compare, and verify records; do not claim you lack access when the requested data is present.
 
 Return JSON only with this shape:
 {
@@ -555,7 +556,7 @@ async function handleAssistant(request: Request, env: Env): Promise<Response> {
   const rawSteps = Array.isArray(modelPlan.steps) ? modelPlan.steps.slice(0, 12) : [];
   const steps = rawSteps.map((step: JsonRecord, index: number) => normalizeAssistantStep(step, index));
   const questions = toStringArray(modelPlan.questions);
-  const status = questions.length > 0 && steps.length === 0 ? "needs_clarification" : "pending_approval";
+  const status = questions.length > 0 && steps.length === 0 ? "needs_clarification" : (steps.length === 0 ? "completed" : "pending_approval");
   const summary = normalizeText(modelPlan.summary ?? modelPlan.message) || (steps.length ? `Prepared ${steps.length} change${steps.length === 1 ? "" : "s"} for approval.` : "I need more information.");
   const plan = await insertAssistantRecord(env, "assistant_plans", {
     thread_id: threadId, workspace_id: "default", status, summary, questions,
@@ -1433,6 +1434,7 @@ async function handleUpdateTransaction(id: string, request: Request, env: Env): 
   const categoryAccountId = body.ledgerAccountId ?? body.ledger_account_id ?? body.categoryAccountId ?? body.category_account_id;
 
   const txUpdates = mapTransactionInput(body, true);
+  if (categoryAccountId) txUpdates.classification_status = "classified";
 
   const res = await supabaseFetch(env, `/transactions?id=eq.${filterValue(id)}`, {
     method: "PATCH",

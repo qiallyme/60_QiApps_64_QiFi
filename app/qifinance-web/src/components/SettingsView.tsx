@@ -8,7 +8,7 @@ import { useQiStore } from '../store';
 import { 
   Settings as SettingsIcon, Download, Upload, RefreshCw, 
   Shield, HelpCircle, HardDrive, Database, Info, Trash2,
-  CheckCircle, AlertTriangle, X, Key, Eye, EyeOff
+  CheckCircle, AlertTriangle, X, Key, Eye, EyeOff, Sun, Moon, Palette
 } from 'lucide-react';
 
 export default function SettingsView() {
@@ -17,6 +17,16 @@ export default function SettingsView() {
 
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('qifi_user_openai_api_key') || '');
   const [showKey, setShowKey] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem('qifi_theme') || 'dark');
+  const [accent, setAccent] = useState(() => localStorage.getItem('qifi_accent') || 'emerald');
+
+  const applyAppearance = (nextTheme: string, nextAccent: string) => {
+    setTheme(nextTheme); setAccent(nextAccent);
+    localStorage.setItem('qifi_theme', nextTheme);
+    localStorage.setItem('qifi_accent', nextAccent);
+    document.documentElement.dataset.theme = nextTheme;
+    document.documentElement.dataset.accent = nextAccent;
+  };
 
   const handleSaveApiKey = () => {
     localStorage.setItem('qifi_user_openai_api_key', apiKey.trim());
@@ -165,6 +175,15 @@ export default function SettingsView() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="md:col-span-2 bg-zinc-900/30 border border-zinc-800/80 p-5 rounded-2xl space-y-4">
+          <h3 className="text-sm font-semibold text-zinc-100 flex items-center gap-2"><Palette size={16} className="text-emerald-400"/>Appearance</h3>
+          <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
+            <div className="inline-flex rounded-xl border border-zinc-800 bg-zinc-950/60 p-1">
+              {[['dark','Dark',Moon],['light','Light',Sun]].map(([value,label,Icon]: any) => <button key={value} onClick={() => applyAppearance(value, accent)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold ${theme === value ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400'}`}><Icon size={14}/>{label}</button>)}
+            </div>
+            <div className="flex items-center gap-2"><span className="text-xs text-zinc-500 mr-1">Accent</span>{['emerald','blue','violet','amber'].map((color) => <button key={color} onClick={() => applyAppearance(theme, color)} aria-label={`${color} accent`} className={`h-8 w-8 rounded-full border-2 ${accent === color ? 'border-white scale-110' : 'border-transparent'} accent-swatch accent-${color}`}/>)}</div>
+          </div>
+        </div>
         {/* Core Controls Card */}
         <div className="bg-zinc-900/30 border border-zinc-800/80 p-6 rounded-2xl space-y-6 backdrop-blur-sm">
           <h3 className="text-sm font-semibold text-zinc-100 flex items-center gap-2 font-display">

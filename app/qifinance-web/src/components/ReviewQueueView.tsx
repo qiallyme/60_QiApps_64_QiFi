@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useQiStore } from '../store';
 import SearchableAccountSelect from './SearchableAccountSelect';
 import { RawImportedRow, Account } from '../types';
@@ -15,7 +16,7 @@ import {
 
 export default function ReviewQueueView() {
   const { 
-    rawRows, 
+    rawRows, transactions,
     accounts, 
     rules, 
     approveRow, 
@@ -28,6 +29,7 @@ export default function ReviewQueueView() {
 
   // Find all raw pending rows
   const pendingRows = useMemo(() => rawRows.filter(r => r.status === 'pending'), [rawRows]);
+  const pendingManual = useMemo(() => transactions.filter(transaction => transaction.classificationStatus === 'needs_review'), [transactions]);
   
   // View Mode: 'sheet' | 'swiper'
   const [viewMode, setViewMode] = useState<'sheet' | 'swiper'>('sheet');
@@ -250,7 +252,7 @@ export default function ReviewQueueView() {
     setRuleApplyPrompt(null);
   };
 
-  if (pendingRows.length === 0) {
+  if (pendingRows.length === 0 && pendingManual.length === 0) {
     return (
       <div className="bg-zinc-900/40 p-8 rounded-2xl border border-zinc-800/80 shadow-2xl text-center space-y-4 max-w-lg mx-auto backdrop-blur-sm animate-fadeIn" id="review-cleared-card">
         <div className="w-16 h-16 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full flex items-center justify-center mx-auto">
@@ -271,6 +273,7 @@ export default function ReviewQueueView() {
 
   return (
     <div className="space-y-6">
+      {pendingManual.length > 0 && <section className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4"><div className="flex items-center justify-between mb-3"><div><h3 className="text-sm font-bold text-amber-300">Manual entries needing classification</h3><p className="text-[10px] text-zinc-500">Assign a ledger category to complete posting.</p></div><Link to="/transactions" className="text-xs font-bold text-emerald-400">Open ledger →</Link></div><div className="space-y-2">{pendingManual.map(transaction => <div key={transaction.id} className="grid grid-cols-[90px_1fr_auto] gap-3 rounded-xl border border-zinc-800 bg-zinc-950/50 p-3 text-xs"><span className="font-mono text-zinc-500">{transaction.date}</span><span className="text-zinc-200">{transaction.description}</span><span className="font-mono text-amber-300">${Math.abs(transaction.amount).toFixed(2)}</span></div>)}</div></section>}
       {/* CARD STATUS HEADER & TOGGLE */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
