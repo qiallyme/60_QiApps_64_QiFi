@@ -935,7 +935,8 @@ export default function LedgerView() {
               const hasReceipt = attachments.some(a => a.transactionId === tx.id);
               const txLedgers = ledgerEntries.filter(le => le.transactionId === tx.id);
               const srcAccount = accounts.find(a => a.id === tx.sourceAccountId);
-              const categoryLine = txLedgers.find(line => line.accountId !== srcAccount?.id && line.accountId !== srcAccount?.defaultLedgerAccountId);
+              const sourceFinancialAccount = financialAccounts.find(account => account.id === (tx.financialAccountId || tx.sourceAccountId));
+              const categoryLine = txLedgers.find(line => line.accountId !== sourceFinancialAccount?.defaultLedgerAccountId);
               const suggestedPattern = (tx.counterparty || tx.description).trim().toLowerCase().split(/\s+/).slice(0, 3).join(' ');
               const matchingRule = rules.some(rule => rule.pattern.toLowerCase() === suggestedPattern);
 

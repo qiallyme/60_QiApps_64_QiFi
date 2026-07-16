@@ -19,20 +19,20 @@ function getAuthRedirectUrl(): string {
 }
 
 // Core Views
-import LedgerView from './components/LedgerView';
-import ReviewQueueView from './components/ReviewQueueView';
-import ImportView from './components/ImportView';
-import ChartOfAccountsView from './components/ChartOfAccountsView';
-import EvidenceView from './components/EvidenceView';
-import ReconciliationView from './components/ReconciliationView';
-import ForecastView from './components/ForecastView';
-import CounterpartyView from './components/CounterpartyView';
-import AccountabilityView from './components/AccountabilityView';
-import ReportsView from './components/ReportsView';
-import SettingsView from './components/SettingsView';
-import CategoryRulesView from './components/CategoryRulesView';
 import AssistantView from './components/AssistantView';
-import FinancialAccountsView from './components/FinancialAccountsView';
+const LedgerView = React.lazy(() => import('./components/LedgerView'));
+const ReviewQueueView = React.lazy(() => import('./components/ReviewQueueView'));
+const ImportView = React.lazy(() => import('./components/ImportView'));
+const ChartOfAccountsView = React.lazy(() => import('./components/ChartOfAccountsView'));
+const EvidenceView = React.lazy(() => import('./components/EvidenceView'));
+const ReconciliationView = React.lazy(() => import('./components/ReconciliationView'));
+const ForecastView = React.lazy(() => import('./components/ForecastView'));
+const CounterpartyView = React.lazy(() => import('./components/CounterpartyView'));
+const AccountabilityView = React.lazy(() => import('./components/AccountabilityView'));
+const ReportsView = React.lazy(() => import('./components/ReportsView'));
+const SettingsView = React.lazy(() => import('./components/SettingsView'));
+const CategoryRulesView = React.lazy(() => import('./components/CategoryRulesView'));
+const FinancialAccountsView = React.lazy(() => import('./components/FinancialAccountsView'));
 
 import { 
   TrendingUp, Inbox, Sparkles, Layers, BookOpen, WalletCards,
@@ -269,7 +269,7 @@ function SidebarAndNav() {
 
         {/* MAIN VIEW FRAMEWORK */}
         <main className="flex-1 overflow-y-auto p-3 sm:p-5 pb-20 md:pb-6 w-full max-w-7xl">
-          <div className="animate-fadeIn">
+          <React.Suspense fallback={<div className="p-10 text-center text-xs text-zinc-500">Loading workspace…</div>}><div className="animate-fadeIn">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<ForecastView />} />
@@ -290,7 +290,7 @@ function SidebarAndNav() {
               <Route path="/settings" element={<SettingsView />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
-          </div>
+          </div></React.Suspense>
         </main>
 
         {/* MOBILE BOTTOM NAVIGATION BAR (Consolidated into 5 critical targets) */}
