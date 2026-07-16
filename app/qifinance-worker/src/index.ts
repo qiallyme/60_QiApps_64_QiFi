@@ -67,6 +67,16 @@ const DOMAIN_ROUTES: Record<string, {
     order: "name.asc",
     mapInput: mapCounterpartyInput
   },
+  "counterparty-relationships": {
+    table: "counterparty_relationships",
+    order: "created_at.desc",
+    mapInput: mapCounterpartyRelationshipInput
+  },
+  "counterparty-events": {
+    table: "counterparty_events",
+    order: "occurred_at.desc",
+    mapInput: mapCounterpartyEventInput
+  },
   obligations: {
     table: "obligations",
     order: "created_at.desc",
@@ -1945,6 +1955,38 @@ function mapCounterpartyInput(body: JsonRecord, isUpdate = false): JsonRecord {
     tags: body.tags ?? [],
     is_business: body.isBusiness ?? body.is_business,
     relationship_type: body.relationshipType ?? body.relationship_type ?? null,
+    website_url: body.websiteUrl ?? body.website_url ?? null,
+    image_url: body.imageUrl ?? body.image_url ?? null,
+    notes: body.notes ?? "",
+    updated_at: new Date().toISOString()
+  });
+}
+
+function mapCounterpartyRelationshipInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return compact({
+    id: isUpdate ? undefined : body.id,
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
+    counterparty_id: body.counterpartyId ?? body.counterparty_id,
+    related_counterparty_id: body.relatedCounterpartyId ?? body.related_counterparty_id,
+    relationship_type: body.relationshipType ?? body.relationship_type ?? "contact",
+    notes: body.notes ?? "",
+    updated_at: new Date().toISOString()
+  });
+}
+
+function mapCounterpartyEventInput(body: JsonRecord, isUpdate = false): JsonRecord {
+  return compact({
+    id: isUpdate ? undefined : body.id,
+    workspace_id: body.workspaceId ?? body.workspace_id ?? "default",
+    counterparty_id: body.counterpartyId ?? body.counterparty_id,
+    event_type: body.eventType ?? body.event_type ?? "note",
+    occurred_at: body.occurredAt ?? body.occurred_at ?? new Date().toISOString(),
+    title: body.title,
+    body: body.body ?? "",
+    amount: body.amount ?? null,
+    transaction_id: normalizeUuidOrNull(body.transactionId ?? body.transaction_id),
+    obligation_id: body.obligationId ?? body.obligation_id ?? null,
+    metadata: body.metadata ?? {},
     updated_at: new Date().toISOString()
   });
 }
@@ -1959,6 +2001,12 @@ function mapObligationInput(body: JsonRecord, isUpdate = false): JsonRecord {
     description: body.description,
     transaction_id: normalizeUuidOrNull(body.transactionId ?? body.transaction_id),
     due_date: body.dueDate ?? body.due_date ?? null,
+    incurred_date: body.incurredDate ?? body.incurred_date ?? (isUpdate ? undefined : new Date().toISOString().slice(0, 10)),
+    settled_at: body.settledAt ?? body.settled_at ?? null,
+    settlement_transaction_id: normalizeUuidOrNull(body.settlementTransactionId ?? body.settlement_transaction_id),
+    originating_journal_entry_id: normalizeUuidOrNull(body.originatingJournalEntryId ?? body.originating_journal_entry_id),
+    settlement_journal_entry_id: normalizeUuidOrNull(body.settlementJournalEntryId ?? body.settlement_journal_entry_id),
+    write_off_journal_entry_id: normalizeUuidOrNull(body.writeOffJournalEntryId ?? body.write_off_journal_entry_id),
     status: body.status ?? "active",
     updated_at: new Date().toISOString()
   });

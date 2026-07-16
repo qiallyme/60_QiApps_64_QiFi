@@ -142,6 +142,9 @@ export interface Counterparty {
   tags: string[];
   isBusiness: boolean;
   relationshipType?: 'Friend' | 'Family' | 'Coworker' | 'Collegue' | 'Partner' | 'Client' | 'Acuentance' | 'Other';
+  websiteUrl?: string;
+  imageUrl?: string;
+  notes?: string;
   createdAt: string;
 }
 
@@ -154,8 +157,38 @@ export interface AccountabilityObligation {
   description: string;
   transactionId?: string | null; // reference to source Transaction if any
   dueDate?: string;
-  status: 'active' | 'resolved' | 'disputed';
+  incurredDate?: string;
+  settledAt?: string | null;
+  settlementTransactionId?: string | null;
+  originatingJournalEntryId?: string | null;
+  settlementJournalEntryId?: string | null;
+  writeOffJournalEntryId?: string | null;
+  status: 'active' | 'resolved' | 'disputed' | 'written_off';
   createdAt: string;
+}
+
+export interface CounterpartyRelationship {
+  id: string;
+  workspaceId: string;
+  counterpartyId: string;
+  relatedCounterpartyId: string;
+  relationshipType: string;
+  notes: string;
+  createdAt: string;
+}
+
+export interface CounterpartyEvent {
+  id: string;
+  workspaceId: string;
+  counterpartyId: string;
+  eventType: 'note' | 'transaction' | 'obligation_created' | 'obligation_resolved' | 'obligation_written_off' | 'relationship';
+  occurredAt: string;
+  title: string;
+  body: string;
+  amount?: number | null;
+  transactionId?: string | null;
+  obligationId?: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 export interface TransactionSplit {

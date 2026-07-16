@@ -263,6 +263,9 @@ function mapApiCounterparty(counterparty: any): Counterparty {
     tags: counterparty.tags || [],
     isBusiness: counterparty.is_business ?? true,
     relationshipType: counterparty.relationship_type,
+    websiteUrl: counterparty.website_url,
+    imageUrl: counterparty.image_url,
+    notes: counterparty.notes || '',
     createdAt: counterparty.created_at
   };
 }
@@ -277,6 +280,12 @@ function mapApiObligation(obligation: any): AccountabilityObligation {
     description: obligation.description,
     transactionId: obligation.transaction_id,
     dueDate: obligation.due_date,
+    incurredDate: obligation.incurred_date || obligation.created_at?.slice(0, 10),
+    settledAt: obligation.settled_at,
+    settlementTransactionId: obligation.settlement_transaction_id,
+    originatingJournalEntryId: obligation.originating_journal_entry_id,
+    settlementJournalEntryId: obligation.settlement_journal_entry_id,
+    writeOffJournalEntryId: obligation.write_off_journal_entry_id,
     status: obligation.status || 'active',
     createdAt: obligation.created_at
   };
