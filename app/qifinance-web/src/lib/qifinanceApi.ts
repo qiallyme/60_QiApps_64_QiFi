@@ -23,7 +23,7 @@ async function authHeaders(init?: RequestInit): Promise<Headers> {
   const headers = new Headers(init?.headers);
   // Get the current Supabase session access token
   const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token ?? '';
+  const token = data.session?.access_token ?? getStoredAuthToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   return headers;
 }
@@ -234,7 +234,10 @@ export const qifinanceApi = {
   },
 
   hasAuthToken(): boolean {
-    return Boolean(getStoredAuthToken());
+    const token = getStoredAuthToken();
+    // Supabase JWTs must be validated/restored by supabase.auth.getSession().
+    // Treat only the optional static passphrase as an immediate local unlock.
+    return Boolean(token) && !(token.startsWith('ey') && token.split('.').length === 3);
   },
 
   async checkHealth(): Promise<{ ok: boolean; service: string; time: string }> {
