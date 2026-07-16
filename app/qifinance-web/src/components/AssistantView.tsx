@@ -44,7 +44,7 @@ export default function AssistantView({ pageContext }: { pageContext?: string })
     finally { setBusy(false); }
   };
 
-  return <div className="h-[calc(100vh-7rem)] min-h-[620px] flex flex-col text-zinc-200">
+  return <div className="h-full min-h-0 flex flex-col text-zinc-200">
     <div className="flex items-center gap-3 border-b border-zinc-800/80 pb-4 mb-4"><div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 flex items-center justify-center"><Bot size={20}/></div><div><h2 className="text-lg font-bold text-white font-display">Qi Assistant</h2><p className="text-xs text-zinc-500">Private finance operator · approval required</p></div></div>
     <div className="flex-1 overflow-y-auto pr-1 space-y-4">{messages.map((message) => <div key={message.id} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
       {message.role === 'assistant' && <div className={`mt-1 h-8 w-8 rounded-lg border flex items-center justify-center shrink-0 ${message.isError ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-zinc-900 border-zinc-800 text-emerald-300'}`}>{message.isError ? <AlertTriangle size={16}/> : <Bot size={16}/>}</div>}

@@ -2,7 +2,7 @@ import React from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { QiProvider, useQiStore } from './store';
 import { qifinanceApi } from './lib/qifinanceApi';
-import { LogOut, MessageCircle, X } from 'lucide-react';
+import { LogOut, Menu, MessageCircle, X } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { isDynamicImportError, lazyWithChunkRecovery, reloadLatestQiFiVersion } from './lib/chunkRecovery';
 
@@ -59,6 +59,23 @@ function SidebarAndNav() {
   const pendingCount = rawRows.filter(r => r.status === 'pending').length;
   const currentPath = location.pathname;
   const [assistantOpen, setAssistantOpen] = React.useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    setAssistantOpen(false);
+    setMobileMenuOpen(false);
+  }, [currentPath]);
+
+  React.useEffect(() => {
+    if (!assistantOpen && !mobileMenuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setAssistantOpen(false); setMobileMenuOpen(false); }
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener('keydown', closeOnEscape); };
+  }, [assistantOpen, mobileMenuOpen]);
 
   React.useEffect(() => {
     const theme = localStorage.getItem('qifi_theme') || 'dark';
@@ -246,9 +263,9 @@ function SidebarAndNav() {
       </aside>
 
       {/* MOBILE BOTTOM NAVIGATION BAR & TOP BAR */}
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="flex-1 min-w-0 flex flex-col min-h-screen">
         {/* MOBILE HEADER DOCK */}
-        <header className="md:hidden bg-zinc-900/60 backdrop-blur-md text-white border-b border-zinc-800/80 p-4 flex items-center justify-between select-none">
+        <header className="md:hidden sticky top-0 z-50 bg-zinc-950/90 backdrop-blur-xl text-white border-b border-zinc-800/80 px-3 py-2.5 flex items-center justify-between select-none">
           <div className="flex items-center gap-2">
             <div className="h-5 w-5 rounded-md bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold text-xs">
               ☯
@@ -262,6 +279,7 @@ function SidebarAndNav() {
           </div>
           
           <div className="flex items-center gap-3">
+            <button onClick={() => setMobileMenuOpen(true)} className="h-10 w-10 rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-300 flex items-center justify-center" aria-label="Open all modules"><Menu size={18}/></button>
             <Link to="/settings" className="text-zinc-400 hover:text-white" title="Settings">
               <SettingsIcon size={16} />
             </Link>
@@ -279,8 +297,17 @@ function SidebarAndNav() {
           </div>
         </header>
 
+        {mobileMenuOpen && <div className="md:hidden fixed inset-0 z-[80] bg-zinc-950/45 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} role="presentation">
+          <aside className="h-[100dvh] w-[min(88vw,22rem)] overflow-y-auto bg-zinc-950 border-r border-zinc-800 p-4 shadow-2xl" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="All QiFi modules">
+            <div className="flex items-center justify-between mb-5"><div><p className="font-bold text-white">All modules</p><p className="text-[10px] text-zinc-500">Accounting workspace</p></div><button onClick={() => setMobileMenuOpen(false)} className="h-10 w-10 rounded-xl bg-zinc-900 text-zinc-300 flex items-center justify-center" aria-label="Close module menu"><X size={18}/></button></div>
+            <nav className="grid gap-1">{[
+              ['/dashboard','Dashboard / Forecast',TrendingUp],['/assistant','Qi Assistant',Bot],['/imports/review','Review Queue',Inbox],['/imports','Ingest Bank Data',Sparkles],['/transactions','Transactions Log',BookOpen],['/financial-accounts','Financial Accounts',WalletCards],['/accounts','Chart of Accounts',Layers],['/rules','Category Rules',Sliders],['/counterparties','Counterparties',Users],['/accountability','Accountability / IOUs',ShieldAlert],['/evidence','Receipts & Evidence',FileText],['/reconcile','Statement Reconcile',ShieldCheck],['/reports','Business P&L Reports',BarChart2],['/settings','Settings',SettingsIcon]
+            ].map(([path,label,Icon]: any) => <Link key={path} to={path} className={`${linkClass(path)} min-h-11`}><div className="flex items-center gap-3"><Icon size={18} className={navIconClass(path)}/><span>{label}</span></div></Link>)}</nav>
+          </aside>
+        </div>}
+
         {/* MAIN VIEW FRAMEWORK */}
-        <main className="flex-1 overflow-y-auto p-3 sm:p-5 pb-20 md:pb-6 w-full max-w-7xl">
+        <main className="flex-1 min-w-0 overflow-x-hidden p-3 sm:p-5 pb-24 md:pb-6 w-full max-w-7xl mx-auto">
           <WorkspaceErrorBoundary><React.Suspense fallback={<div className="p-10 text-center text-xs text-zinc-500">Loading workspace…</div>}><div className="animate-fadeIn">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -306,7 +333,7 @@ function SidebarAndNav() {
         </main>
 
         {/* MOBILE BOTTOM NAVIGATION BAR (Consolidated into 5 critical targets) */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-zinc-900/90 backdrop-blur-md border-t border-zinc-800/80 py-2.5 px-3 flex justify-around items-center select-none z-50">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-800/80 px-2 pt-2 pb-[max(.5rem,env(safe-area-inset-bottom))] grid grid-cols-6 items-center select-none z-50 shadow-2xl">
           <Link to="/dashboard" className={`flex flex-col items-center gap-1 transition-all ${isActive('/dashboard') ? 'text-emerald-400' : 'text-zinc-500'}`}>
             <TrendingUp size={18} />
             <span className="text-[9px] font-semibold">Forecast</span>
@@ -339,7 +366,7 @@ function SidebarAndNav() {
         </nav>
         {currentPath !== '/assistant' && <>
           <button onClick={() => setAssistantOpen(true)} className="fixed right-4 bottom-20 md:bottom-6 z-40 h-12 w-12 rounded-full bg-emerald-500 text-zinc-950 shadow-2xl shadow-emerald-950/50 flex items-center justify-center hover:scale-105 transition-transform" title="Ask Qi about this page"><MessageCircle size={21}/></button>
-          {assistantOpen && <div className="fixed inset-0 z-[70] bg-black/55 backdrop-blur-sm flex justify-end" onClick={() => setAssistantOpen(false)}><section className="h-full w-full sm:max-w-xl bg-[#090a0f] border-l border-zinc-800 p-4 sm:p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between mb-2"><div><p className="text-xs font-bold text-emerald-400">Qi knows your current screen</p><p className="text-[10px] text-zinc-500">Context: {currentPath}</p></div><button onClick={() => setAssistantOpen(false)} className="p-2 rounded-lg bg-zinc-900 text-zinc-400 hover:text-white"><X size={16}/></button></div><AssistantView pageContext={currentPath}/></section></div>}
+          {assistantOpen && <div className="fixed inset-0 z-[70] bg-zinc-950/35 backdrop-blur-sm flex justify-end" onClick={() => setAssistantOpen(false)} role="presentation"><section className="h-[100dvh] min-h-0 w-full sm:max-w-xl bg-zinc-950 border-l border-zinc-800 p-3 sm:p-5 shadow-2xl flex flex-col" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Qi Assistant"><div className="flex items-center justify-between mb-3 shrink-0"><div><p className="text-xs font-bold text-emerald-400">Qi knows your current screen</p><p className="text-[10px] text-zinc-500">Context: {currentPath}</p></div><button onClick={() => setAssistantOpen(false)} className="h-10 w-10 rounded-xl bg-zinc-900 text-zinc-300 hover:text-white flex items-center justify-center" aria-label="Close Qi Assistant"><X size={18}/></button></div><WorkspaceErrorBoundary><AssistantView pageContext={currentPath}/></WorkspaceErrorBoundary></section></div>}
         </>}
       </div>
 

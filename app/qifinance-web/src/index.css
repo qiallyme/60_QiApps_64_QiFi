@@ -50,6 +50,15 @@ html[data-theme="light"] input:focus,
 html[data-theme="light"] select:focus,
 html[data-theme="light"] textarea:focus { border-color:#059669 !important; box-shadow:0 0 0 3px rgba(5,150,105,.14) !important; }
 
+/* Mobile interaction safety and resilient wide accounting tables. */
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible { outline: 2px solid #34d399; outline-offset: 2px; }
+@media (max-width: 767px) {
+  .app-shell table { min-width: 680px; }
+  .app-shell input, .app-shell select, .app-shell textarea { font-size: 16px; }
+  .app-shell button { touch-action: manipulation; }
+}
+
 html[data-accent="blue"] .bg-emerald-500, html[data-accent="blue"] .bg-emerald-600 { background-color:#3b82f6 !important; }
 html[data-accent="violet"] .bg-emerald-500, html[data-accent="violet"] .bg-emerald-600 { background-color:#8b5cf6 !important; }
 html[data-accent="amber"] .bg-emerald-500, html[data-accent="amber"] .bg-emerald-600 { background-color:#f59e0b !important; }

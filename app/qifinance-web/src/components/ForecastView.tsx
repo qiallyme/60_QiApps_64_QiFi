@@ -275,9 +275,8 @@ export default function ForecastView() {
   };
 
   // New Schedule form state
-  const [showAddForm, setShowAddForm] = useState(() => {
-    return !!localStorage.getItem('qifi_draft_schedule');
-  });
+  // A saved draft must never force an editor open on page load.
+  const [showAddForm, setShowAddForm] = useState(false);
   const [newSchedName, setNewSchedName] = useState(() => {
     const draft = localStorage.getItem('qifi_draft_schedule');
     if (draft) {
