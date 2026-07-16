@@ -1,6 +1,5 @@
-const CACHE_NAME = 'qifi-shell-v3';
+const CACHE_NAME = 'qifi-shell-v4';
 const SHELL_ASSETS = [
-  '/',
   '/manifest.webmanifest',
   '/qifi-icon-192.png',
   '/qifi-icon-512.png',
@@ -36,10 +35,10 @@ self.addEventListener('fetch', (event) => {
       fetch(request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('/', copy));
+          caches.open(CACHE_NAME).then((cache) => cache.put('/offline-shell', copy));
           return response;
         })
-        .catch(() => caches.match('/') || Response.error())
+        .catch(() => caches.match('/offline-shell') || Response.error())
     );
     return;
   }

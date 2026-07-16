@@ -80,7 +80,7 @@ function SidebarAndNav() {
   };
 
   return (
-    <div className="min-h-screen bg-[#090a0f] flex flex-col md:flex-row font-sans text-zinc-300">
+    <div className="app-shell min-h-screen bg-[#090a0f] flex flex-col md:flex-row font-sans text-zinc-300">
       
       {/* DESKTOP SIDE BAR RAIL */}
       <aside className="hidden md:flex flex-col w-64 bg-zinc-900/30 text-zinc-300 border-r border-zinc-800/80 shrink-0 select-none">
