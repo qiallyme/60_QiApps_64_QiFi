@@ -210,13 +210,30 @@ export interface AssistantActionResult {
   record?: any;
 }
 
+export interface AssistantPlanStep {
+  id: string;
+  clientStepId: string;
+  position: number;
+  type: string;
+  description: string;
+  payload: Record<string, unknown>;
+  dependsOn: string[];
+  confidence: number | null;
+  status: 'proposed' | 'approved' | 'rejected' | 'executing' | 'executed' | 'skipped' | 'failed';
+  result?: AssistantActionResult;
+  error?: string | null;
+}
+
 export interface AssistantResponse {
   ok: boolean;
-  message: string;
-  createdCount: number;
-  errorCount: number;
+  threadId: string;
+  planId: string;
+  status: 'needs_clarification' | 'pending_approval' | 'executing' | 'completed' | 'partially_completed' | 'failed' | 'rejected';
+  summary: string;
+  questions: string[];
   warnings: string[];
-  actions: AssistantActionResult[];
+  steps: AssistantPlanStep[];
+  results?: AssistantActionResult[];
   model: string;
 }
 
@@ -248,13 +265,17 @@ export const qifinanceApi = {
     return requestJson('/api/finance/state', 'Failed to fetch finance state');
   },
 
-  async askAssistant(message: string): Promise<AssistantResponse> {
+  async askAssistant(message: string, threadId?: string): Promise<AssistantResponse> {
     const userApiKey = localStorage.getItem('qifi_user_openai_api_key') || '';
     const headers: Record<string, string> = {};
     if (userApiKey) {
       headers['x-openai-api-key'] = userApiKey;
     }
-    return postJson('/api/finance/assistant', { message }, 'QiFi Assistant request failed', { headers });
+    return postJson('/api/finance/assistant', { message, threadId }, 'QiFi Assistant request failed', { headers });
+  },
+
+  async executeAssistantPlan(planId: string, stepIds: string[]): Promise<AssistantResponse> {
+    return postJson(`/api/finance/assistant/plans/${idPath(planId)}/execute`, { stepIds }, 'QiFi Assistant execution failed');
   },
 
   async getAccounts(): Promise<Account[]> {

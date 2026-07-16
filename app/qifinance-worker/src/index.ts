@@ -28,6 +28,7 @@ interface AssistantContext {
   categories: JsonRecord[];
   counterparties: JsonRecord[];
   rules: JsonRecord[];
+  recentTransactions: JsonRecord[];
 }
 
 const ALLOWED_ORIGINS = [
@@ -120,6 +121,7 @@ const ALLOWED_ACCOUNT_TYPES = new Set([
 
 const ALLOWED_ASSISTANT_ACTIONS = new Set([
   "create_account",
+  "create_category",
   "create_counterparty",
   "create_obligation",
   "create_schedule",
@@ -128,19 +130,23 @@ const ALLOWED_ASSISTANT_ACTIONS = new Set([
 ]);
 
 const ASSISTANT_SYSTEM_PROMPT = `
-You are QiFi's private finance operations assistant. Convert the user's request into a small JSON action plan that QiFi can execute.
+You are QiFi's private finance operations planner. Inspect the supplied accounts, ledger accounts, categories, counterparties, rules, recent transactions, and conversation before proposing changes. Never execute anything yourself.
 
 Return JSON only with this shape:
 {
   "summary": "short user-facing summary",
-  "warnings": ["optional warning"],
-  "actions": [
-    { "type": "create_account", "name": "...", "accountType": "asset", "accountKind": "checking", "institution": "...", "accountNumber": "...", "routingNumber": null, "description": "..." }
+  "status": "needs_clarification or pending_approval",
+  "questions": ["one targeted blocking question"],
+  "warnings": ["assumptions or review notes"],
+  "steps": [
+    { "clientStepId": "step-1", "type": "create_transaction", "description": "Record the purchase", "payload": {}, "dependsOn": [], "confidence": 0.9 }
   ]
 }
 
-Allowed action types are create_account, create_counterparty, create_obligation, create_schedule, create_rule, and create_transaction.
-Only create records. Treat create_account as a real-world financial account, not a chart-of-accounts ledger account. For requests that update, delete, reconcile, or are ambiguous, return no actions and explain what confirmation or detail is needed in summary.
+Allowed action types are create_account, create_category, create_counterparty, create_obligation, create_schedule, create_rule, and create_transaction.
+Treat create_account as a real-world financial account. If an account, category, or counterparty is missing, propose creating it before the dependent transaction. Prefer existing records and use their exact IDs. Never silently merge distinct entities.
+Ask only questions that block a safe entry. If the date is omitted, propose today's date and add a warning instead of blocking. If business purpose is unclear, use the best matching existing category or propose a clearly named review category and warn. A transfer chain should be represented as separate transactions for each real movement; explain that in step descriptions. Use negative amounts for money leaving an account and positive amounts for money entering it.
+When prior conversation answers a question, incorporate it. Set status needs_clarification and return no executable steps only when a required account or amount truly cannot be identified. Otherwise set pending_approval. Every proposed change still requires approval in the UI.
 
 Account rules:
 - Checking and savings accounts are accountType "asset".
@@ -155,7 +161,7 @@ Transaction rules:
 - Dates must be YYYY-MM-DD.
 - categoryAccountId is the chart-of-accounts category/posting account when known.
 
-Never invent SQL, credentials, or unsupported fields. If you do not have enough information to safely create a record, return actions [].
+Never invent SQL, credentials, or unsupported fields.
 `.trim();
 
 export default {
@@ -308,6 +314,11 @@ async function router(request: Request, env: Env): Promise<Response> {
 
   if (path === "/api/finance/assistant" && request.method === "POST") {
     return await handleAssistant(request, env);
+  }
+
+  const assistantExecuteMatch = path.match(/^\/api\/finance\/assistant\/plans\/([^/]+)\/execute$/);
+  if (assistantExecuteMatch && request.method === "POST") {
+    return await handleExecuteAssistantPlan(decodeURIComponent(assistantExecuteMatch[1]), request, env);
   }
 
   if (path === "/api/finance/accounts") {
@@ -525,62 +536,88 @@ async function handleAssistant(request: Request, env: Env): Promise<Response> {
   const message = normalizeText(body.message ?? body.prompt);
   if (!message) return json({ error: "Assistant message is required." }, 400);
 
-  const context = await buildAssistantContext(env);
-  const plan = await planAssistantActions(env, message, context, apiKey);
-  const warnings = toStringArray(plan.warnings);
-  const plannedActions = Array.isArray(plan.actions) ? plan.actions.slice(0, 10) : [];
-  const results: AssistantActionResult[] = [];
-
-  for (const action of plannedActions) {
-    const type = normalizeText(action?.type);
-
-    if (!ALLOWED_ASSISTANT_ACTIONS.has(type)) {
-      results.push({
-        type: type || "unknown",
-        status: "skipped",
-        message: type ? `Unsupported assistant action: ${type}` : "Assistant returned an action without a type."
-      });
-      continue;
-    }
-
-    try {
-      results.push(await executeAssistantAction(action, env, context));
-    } catch (error: any) {
-      results.push({
-        type,
-        status: "error",
-        message: error?.message ?? `Failed to execute ${type}`
-      });
-    }
+  let threadId = normalizeText(body.threadId ?? body.thread_id);
+  if (threadId) {
+    const existing = await selectAssistantRows(env, "assistant_threads", `id=eq.${filterValue(threadId)}&select=id`);
+    if (existing.length === 0) return json({ error: "Assistant thread not found." }, 404);
+  } else {
+    const thread = await insertAssistantRecord(env, "assistant_threads", {
+      workspace_id: "default",
+      title: truncate(message, 100)
+    }, "/api/finance/assistant");
+    threadId = thread.id;
   }
 
-  const createdCount = results.filter((result) => result.status === "created").length;
-  const errorCount = results.filter((result) => result.status === "error").length;
-  const summary = normalizeText(plan.summary ?? plan.message);
-  const resultMessage = summary || (
-    createdCount > 0
-      ? `Created ${createdCount} record${createdCount === 1 ? "" : "s"}.`
-      : "No records were created."
-  );
+  await insertAssistantRecord(env, "assistant_messages", { thread_id: threadId, role: "user", content: message }, "/api/finance/assistant");
+  const conversation = await selectAssistantRows(env, "assistant_messages", `thread_id=eq.${filterValue(threadId)}&select=role,content,created_at&order=created_at.asc&limit=20`);
+  const context = await buildAssistantContext(env);
+  const modelPlan = await planAssistantActions(env, message, context, conversation, apiKey);
+  const rawSteps = Array.isArray(modelPlan.steps) ? modelPlan.steps.slice(0, 12) : [];
+  const steps = rawSteps.map((step: JsonRecord, index: number) => normalizeAssistantStep(step, index));
+  const questions = toStringArray(modelPlan.questions);
+  const status = questions.length > 0 && steps.length === 0 ? "needs_clarification" : "pending_approval";
+  const summary = normalizeText(modelPlan.summary ?? modelPlan.message) || (steps.length ? `Prepared ${steps.length} change${steps.length === 1 ? "" : "s"} for approval.` : "I need more information.");
+  const plan = await insertAssistantRecord(env, "assistant_plans", {
+    thread_id: threadId, workspace_id: "default", status, summary, questions,
+    warnings: toStringArray(modelPlan.warnings)
+  }, "/api/finance/assistant");
 
-  return json({
-    ok: errorCount === 0,
-    message: resultMessage,
-    createdCount,
-    errorCount,
-    warnings,
-    actions: results,
-    model: env.OPENAI_MODEL || "gpt-5.4-mini"
-  }, errorCount > 0 && createdCount === 0 ? 422 : 200);
+  const persistedSteps: JsonRecord[] = [];
+  for (const step of steps) {
+    persistedSteps.push(await insertAssistantRecord(env, "assistant_plan_steps", {
+      plan_id: plan.id, client_step_id: step.clientStepId, position: step.position,
+      action_type: step.type, description: step.description, payload: step.payload,
+      depends_on: step.dependsOn, confidence: step.confidence, status: "proposed"
+    }, "/api/finance/assistant"));
+  }
+  await insertAssistantRecord(env, "assistant_messages", { thread_id: threadId, role: "assistant", content: summary }, "/api/finance/assistant");
+  return json(formatAssistantPlan(plan, persistedSteps, env));
+}
+
+async function handleExecuteAssistantPlan(planId: string, request: Request, env: Env): Promise<Response> {
+  const body = await request.json().catch(() => ({})) as JsonRecord;
+  const selected = new Set(toStringArray(body.stepIds ?? body.step_ids));
+  const plans = await selectAssistantRows(env, "assistant_plans", `id=eq.${filterValue(planId)}&select=*`);
+  if (plans.length === 0) return json({ error: "Assistant plan not found." }, 404);
+  const plan = plans[0];
+  if (!["pending_approval", "partially_completed", "failed"].includes(plan.status)) return json({ error: `Plan cannot be executed from status ${plan.status}.` }, 409);
+  const steps = await selectAssistantRows(env, "assistant_plan_steps", `plan_id=eq.${filterValue(planId)}&select=*&order=position.asc`);
+  const approved = steps.filter((step) => (selected.size === 0 || selected.has(step.id)) && ["proposed", "failed"].includes(step.status));
+  if (approved.length === 0) return json({ error: "Select at least one proposed step." }, 400);
+  await patchAssistantRows(env, "assistant_plans", `id=eq.${filterValue(planId)}`, { status: "executing", updated_at: new Date().toISOString() });
+  const context = await buildAssistantContext(env);
+  const results: AssistantActionResult[] = [];
+  for (const step of approved) {
+    await patchAssistantRows(env, "assistant_plan_steps", `id=eq.${filterValue(step.id)}`, { status: "executing", error: null });
+    const action = { ...step.payload, type: step.action_type };
+    let result: AssistantActionResult;
+    try {
+      result = await executeAssistantAction(action, env, context);
+    } catch (error: any) {
+      result = assistantError(step.action_type, error?.message ?? `Failed to execute ${step.action_type}`);
+    }
+    results.push(result);
+    await patchAssistantRows(env, "assistant_plan_steps", `id=eq.${filterValue(step.id)}`, {
+      status: result.status === "error" ? "failed" : (result.status === "skipped" ? "skipped" : "executed"),
+      result, error: result.status === "error" ? result.message : null, updated_at: new Date().toISOString()
+    });
+  }
+  const errorCount = results.filter((result) => result.status === "error").length;
+  const finalStatus = errorCount === 0 ? "completed" : (errorCount === results.length ? "failed" : "partially_completed");
+  await patchAssistantRows(env, "assistant_plans", `id=eq.${filterValue(planId)}`, { status: finalStatus, executed_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+  const freshPlan = (await selectAssistantRows(env, "assistant_plans", `id=eq.${filterValue(planId)}&select=*`))[0];
+  const freshSteps = await selectAssistantRows(env, "assistant_plan_steps", `plan_id=eq.${filterValue(planId)}&select=*&order=position.asc`);
+  return json({ ...formatAssistantPlan(freshPlan, freshSteps, env), ok: errorCount === 0, results });
 }
 
 async function buildAssistantContext(env: Env): Promise<AssistantContext> {
-  const [financialAccounts, ledgerAccounts, categories, counterparties, rules] = await Promise.all([
+  const [financialAccounts, ledgerAccounts, categories, counterparties, rules, recentTransactions] = await Promise.all([
     selectAll(env, "financial_accounts", "name.asc"),
     selectAll(env, "ledger_accounts", "code.asc"),
     selectAll(env, "categories", "name.asc"),
     selectAll(env, "counterparties", "name.asc"),
-    selectAll(env, "classification_rules", "created_at.desc")
+    selectAll(env, "classification_rules", "created_at.desc"),
+    selectAssistantRows(env, "transactions", "select=id,transaction_date,description,amount,financial_account_id,category_id,counterparty&order=transaction_date.desc&limit=50")
   ]);
 
   return {
@@ -617,11 +654,12 @@ async function buildAssistantContext(env: Env): Promise<AssistantContext> {
       suggested_category_id: rule.suggested_category_id,
       suggested_ledger_account_id: rule.suggested_ledger_account_id,
       suggested_counterparty: rule.suggested_counterparty
-    }))
+    })),
+    recentTransactions
   };
 }
 
-async function planAssistantActions(env: Env, message: string, context: AssistantContext, apiKey: string): Promise<JsonRecord> {
+async function planAssistantActions(env: Env, message: string, context: AssistantContext, conversation: JsonRecord[], apiKey: string): Promise<JsonRecord> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -638,6 +676,7 @@ async function planAssistantActions(env: Env, message: string, context: Assistan
           content: JSON.stringify({
             request: message,
             today: new Date().toISOString().slice(0, 10),
+            conversation,
             existingData: context
           })
         }
@@ -666,6 +705,7 @@ async function executeAssistantAction(action: JsonRecord, env: Env, context: Ass
   const type = normalizeText(action.type);
 
   if (type === "create_account") return await createAssistantAccount(action, env, context);
+  if (type === "create_category") return await createAssistantCategory(action, env, context);
   if (type === "create_counterparty") return await createAssistantCounterparty(action, env, context);
   if (type === "create_obligation") return await createAssistantObligation(action, env, context);
   if (type === "create_schedule") return await createAssistantSchedule(action, env, context);
@@ -677,6 +717,18 @@ async function executeAssistantAction(action: JsonRecord, env: Env, context: Ass
     status: "skipped",
     message: `Unsupported assistant action: ${type}`
   };
+}
+
+async function createAssistantCategory(action: JsonRecord, env: Env, context: AssistantContext): Promise<AssistantActionResult> {
+  const name = normalizeText(action.name);
+  if (!name) return assistantError("create_category", "Category name is required.");
+  const duplicate = context.categories.find((category) => normalizeText(category.name).toLowerCase() === name.toLowerCase());
+  if (duplicate) return { type: "create_category", status: "skipped", message: `Category already exists: ${duplicate.name}`, record: duplicate };
+  const ledgerAccountId = normalizeText(action.defaultLedgerAccountId ?? action.default_ledger_account_id ?? action.ledgerAccountId ?? action.ledger_account_id);
+  if (ledgerAccountId && !ledgerAccountExists(context, ledgerAccountId)) return assistantError("create_category", `Ledger account not found: ${ledgerAccountId}`);
+  const created = await insertAssistantRecord(env, "categories", mapCategoryInput({ ...action, name, defaultLedgerAccountId: ledgerAccountId || null }, false), "/api/finance/categories");
+  context.categories.push(created);
+  return { type: "create_category", status: "created", message: `Created category: ${created.name}`, record: created };
 }
 
 async function createAssistantAccount(action: JsonRecord, env: Env, context: AssistantContext): Promise<AssistantActionResult> {
@@ -952,6 +1004,60 @@ async function insertAssistantRecord(env: Env, table: string, record: JsonRecord
   if (!res.ok) throw new Error(await supabaseExecutionError(res, route));
   const data = await res.json() as JsonRecord[];
   return data[0];
+}
+
+async function selectAssistantRows(env: Env, table: string, query: string): Promise<JsonRecord[]> {
+  const res = await supabaseFetch(env, `/${table}?${query}`);
+  await assertSupabaseOk(res, `Failed to select ${table}`);
+  return await res.json() as JsonRecord[];
+}
+
+async function patchAssistantRows(env: Env, table: string, query: string, record: JsonRecord): Promise<void> {
+  const res = await supabaseFetch(env, `/${table}?${query}`, {
+    method: "PATCH", body: JSON.stringify(record), headers: { "Prefer": "return=minimal" }
+  });
+  await assertSupabaseOk(res, `Failed to update ${table}`);
+}
+
+function normalizeAssistantStep(step: JsonRecord, index: number): JsonRecord {
+  const type = normalizeText(step.type);
+  if (!ALLOWED_ASSISTANT_ACTIONS.has(type)) throw new Error(`Assistant proposed unsupported action: ${type || "blank"}`);
+  const rawConfidence = Number(step.confidence);
+  return {
+    clientStepId: normalizeText(step.clientStepId ?? step.client_step_id) || `step-${index + 1}`,
+    position: index,
+    type,
+    description: normalizeText(step.description) || type.replace(/_/g, " "),
+    payload: step.payload && typeof step.payload === "object" && !Array.isArray(step.payload) ? step.payload : {},
+    dependsOn: toStringArray(step.dependsOn ?? step.depends_on),
+    confidence: Number.isFinite(rawConfidence) ? Math.max(0, Math.min(1, rawConfidence)) : null
+  };
+}
+
+function formatAssistantPlan(plan: JsonRecord, steps: JsonRecord[], env: Env): JsonRecord {
+  return {
+    ok: true,
+    threadId: plan.thread_id,
+    planId: plan.id,
+    status: plan.status,
+    summary: plan.summary,
+    questions: plan.questions || [],
+    warnings: plan.warnings || [],
+    steps: steps.map((step) => ({
+      id: step.id,
+      clientStepId: step.client_step_id,
+      position: step.position,
+      type: step.action_type,
+      description: step.description,
+      payload: step.payload,
+      dependsOn: step.depends_on || [],
+      confidence: step.confidence === null ? null : Number(step.confidence),
+      status: step.status,
+      result: step.result,
+      error: step.error
+    })),
+    model: env.OPENAI_MODEL || "gpt-5.4-mini"
+  };
 }
 
 async function supabaseExecutionError(res: Response, route: string): Promise<string> {
