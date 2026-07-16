@@ -87,7 +87,7 @@ interface QiContextType {
   deleteSchedule: (id: string) => void;
 
   // Counterparty Actions
-  addCounterparty: (cp: Omit<Counterparty, 'id' | 'createdAt' | 'workspaceId'> & { id?: string }) => void;
+  addCounterparty: (cp: Omit<Counterparty, 'id' | 'createdAt' | 'workspaceId'> & { id?: string }) => Promise<Counterparty>;
   updateCounterparty: (cp: Counterparty) => void;
   deleteCounterparty: (id: string) => void;
 
@@ -1383,18 +1383,16 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // -------------------------
   // Counterparty Actions
   // -------------------------
-  const addCounterparty = (cp: Omit<Counterparty, 'id' | 'createdAt' | 'workspaceId'> & { id?: string }) => {
+  const addCounterparty = async (cp: Omit<Counterparty, 'id' | 'createdAt' | 'workspaceId'> & { id?: string }): Promise<Counterparty> => {
     const newCP: Counterparty = {
       ...cp,
       id: cp.id || `cp-${Date.now()}`,
       workspaceId: 'default',
       createdAt: new Date().toISOString()
     };
-    qifinanceApi.createCounterparty(newCP)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to create counterparty on API, using localStorage:", err));
-    const nextCPs = [...counterparties, newCP];
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, schedules, nextCPs, obligations);
+    await qifinanceApi.createCounterparty(newCP);
+    await refreshApiState();
+    return newCP;
   };
 
   const updateCounterparty = (updatedCP: Counterparty) => {

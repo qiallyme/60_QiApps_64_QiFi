@@ -36,6 +36,19 @@ html[data-theme="light"] [class~="bg-zinc-800"], html[data-theme="light"] [class
 html[data-theme="light"] [class~="border-zinc-800"], html[data-theme="light"] [class~="border-zinc-800/80"], html[data-theme="light"] [class~="border-zinc-700"] { border-color:#d4d4d8 !important; }
 html[data-theme="light"] [class~="text-white"], html[data-theme="light"] [class~="text-zinc-100"], html[data-theme="light"] [class~="text-zinc-200"], html[data-theme="light"] [class~="text-zinc-300"] { color:#18181b !important; }
 html[data-theme="light"] [class~="text-zinc-400"], html[data-theme="light"] [class~="text-zinc-500"], html[data-theme="light"] [class~="text-zinc-600"] { color:#52525b !important; }
+html[data-theme="light"] input,
+html[data-theme="light"] select,
+html[data-theme="light"] textarea {
+  background:#fff !important;
+  color:#18181b !important;
+  border-color:#a1a1aa !important;
+  box-shadow:0 1px 2px rgba(24,24,27,.08);
+}
+html[data-theme="light"] input::placeholder,
+html[data-theme="light"] textarea::placeholder { color:#71717a !important; opacity:1; }
+html[data-theme="light"] input:focus,
+html[data-theme="light"] select:focus,
+html[data-theme="light"] textarea:focus { border-color:#059669 !important; box-shadow:0 0 0 3px rgba(5,150,105,.14) !important; }
 
 html[data-accent="blue"] .bg-emerald-500, html[data-accent="blue"] .bg-emerald-600 { background-color:#3b82f6 !important; }
 html[data-accent="violet"] .bg-emerald-500, html[data-accent="violet"] .bg-emerald-600 { background-color:#8b5cf6 !important; }

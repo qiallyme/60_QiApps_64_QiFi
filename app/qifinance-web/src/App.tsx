@@ -9,6 +9,16 @@ function isJwt(token: string): boolean {
   return token.startsWith('ey') && token.split('.').length === 3;
 }
 
+class WorkspaceErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: React.ErrorInfo) { console.error('[QiFi UI crash]', error, info); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return <div className="m-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-rose-100"><h2 className="font-bold">This screen could not render</h2><p className="mt-2 text-sm text-rose-200">Your financial data was not deleted. Reload the screen to recover.</p><pre className="mt-3 overflow-auto text-[10px] text-rose-300">{this.state.error.message}</pre><button onClick={() => { this.setState({ error: null }); window.location.reload(); }} className="mt-4 rounded-xl bg-rose-500 px-4 py-2 text-xs font-bold text-white">Reload safely</button></div>;
+  }
+}
+
 function getAuthRedirectUrl(): string {
   const configured = import.meta.env.VITE_AUTH_REDIRECT_URL?.trim();
   if (configured) return configured.endsWith('/') ? configured : `${configured}/`;
@@ -269,7 +279,7 @@ function SidebarAndNav() {
 
         {/* MAIN VIEW FRAMEWORK */}
         <main className="flex-1 overflow-y-auto p-3 sm:p-5 pb-20 md:pb-6 w-full max-w-7xl">
-          <React.Suspense fallback={<div className="p-10 text-center text-xs text-zinc-500">Loading workspace…</div>}><div className="animate-fadeIn">
+          <WorkspaceErrorBoundary><React.Suspense fallback={<div className="p-10 text-center text-xs text-zinc-500">Loading workspace…</div>}><div className="animate-fadeIn">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<ForecastView />} />
@@ -290,7 +300,7 @@ function SidebarAndNav() {
               <Route path="/settings" element={<SettingsView />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
-          </div></React.Suspense>
+          </div></React.Suspense></WorkspaceErrorBoundary>
         </main>
 
         {/* MOBILE BOTTOM NAVIGATION BAR (Consolidated into 5 critical targets) */}

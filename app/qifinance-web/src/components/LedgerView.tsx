@@ -13,6 +13,7 @@ import {
   Download, Upload, WandSparkles
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
+import SearchableAccountSelect from './SearchableAccountSelect';
 
 export default function LedgerView() {
   const { 
@@ -28,7 +29,7 @@ export default function LedgerView() {
     updateTransaction,
     exportData,
     importData,
-    financialAccounts,
+    financialAccounts, counterparties, addCounterparty,
     rules,
     addRule
   } = useQiStore();
@@ -37,6 +38,9 @@ export default function LedgerView() {
 
   // Editing transaction state
   const [editingTxId, setEditingTxId] = useState<string | null>(null);
+  const [isPosting, setIsPosting] = useState(false);
+  const [postingError, setPostingError] = useState('');
+  const [newCounterpartyName, setNewCounterpartyName] = useState('');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleBackup = () => {
@@ -434,43 +438,55 @@ export default function LedgerView() {
     });
   }, [transactions, searchTerm, filterAccount, filterTag, filterReconciled, filterEvidence, filterDateRange, ledgerEntries, attachments]);
 
-  const handleAddManualSubmit = (e: React.FormEvent) => {
+  const handleAddManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manualDesc || !manualAmount || isNaN(Number(manualAmount))) return;
+    if (isPosting) return;
+    if (!manualDesc || !manualAmount || isNaN(Number(manualAmount)) || !manualSourceAcc || !manualCatAcc) {
+      setPostingError('Date, amount, description, financial account, and category are required.');
+      return;
+    }
 
     const amount = Number(manualAmount);
     const tags = manualTagsText.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
-    if (editingTxId) {
-      updateTransaction(editingTxId, {
+    setPostingError('');
+    setIsPosting(true);
+    try {
+      let finalCounterparty = manualCounterparty;
+      if (manualCounterparty === '__new__') {
+        finalCounterparty = newCounterpartyName.trim();
+        if (!finalCounterparty) throw new Error('Enter a name for the new counterparty.');
+        await addCounterparty({ name: finalCounterparty, description: 'Created while posting a transaction', tags: [], isBusiness: true, relationshipType: 'Other' });
+      }
+      if (editingTxId) {
+        await updateTransaction(editingTxId, {
         date: manualDate,
         description: manualDesc,
         amount,
         sourceAccountId: manualSourceAcc,
         tags,
-        counterparty: manualCounterparty || 'Cash/Adjustment'
+        counterparty: finalCounterparty || 'Cash/Adjustment'
       }, manualCatAcc);
-    } else {
-      addManualTransaction({
+      } else {
+        const created = await addManualTransaction({
         date: manualDate,
         description: manualDesc,
         rawDescription: 'MANUAL ENTRY: ' + manualDesc,
         amount,
         sourceAccountId: manualSourceAcc,
         tags,
-        counterparty: manualCounterparty || 'Cash/Adjustment'
+        counterparty: finalCounterparty || 'Cash/Adjustment'
       }, manualCatAcc);
-    }
+        if (!created) throw new Error('The ledger post was not saved. Your form has been preserved.');
+      }
 
-    // Reset Form & Clear Draft
-    setManualDesc('');
-    setManualAmount('');
-    setManualCounterparty('');
-    setManualTagsText('');
-    setEditingTxId(null);
-    localStorage.removeItem('qifi_draft_ledger');
-    setIsDraftSaved(false);
-    setShowAddForm(false);
+      setManualDesc(''); setManualAmount(''); setManualCounterparty(''); setNewCounterpartyName(''); setManualTagsText('');
+      setEditingTxId(null); localStorage.removeItem('qifi_draft_ledger'); setIsDraftSaved(false); setShowAddForm(false);
+    } catch (error) {
+      setPostingError(error instanceof Error ? error.message : 'Ledger posting failed. Nothing was cleared.');
+    } finally {
+      setIsPosting(false);
+    }
   };
 
   return (
@@ -552,13 +568,12 @@ export default function LedgerView() {
             {/* Counterparty */}
             <div>
               <label className="block text-xs font-semibold text-zinc-400 mb-1">Merchant / Person</label>
-              <input 
-                type="text" 
-                placeholder="Mom, Apple, Acme Corp"
+              <select
                 value={manualCounterparty} 
                 onChange={e => setManualCounterparty(e.target.value)}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25 placeholder:text-zinc-600"
-              />
+              ><option value="">Select counterparty (optional)</option>{counterparties.map(counterparty => <option key={counterparty.id} value={counterparty.name}>{counterparty.name}</option>)}<option value="__new__">+ Add missing counterparty</option></select>
+              {manualCounterparty === '__new__' && <input autoFocus value={newCounterpartyName} onChange={(event) => setNewCounterpartyName(event.target.value)} placeholder="New counterparty name" className="mt-2 w-full bg-zinc-950 border border-emerald-500/40 rounded-xl px-3 py-2 text-sm text-zinc-100"/>}
             </div>
           </div>
 
@@ -605,19 +620,12 @@ export default function LedgerView() {
             {/* Category Account */}
             <div>
               <label className="block text-xs font-semibold text-zinc-400 mb-1">Category (Where did the money go or come from?)</label>
-              <select
-                value={manualCatAcc}
-                onChange={e => setManualCatAcc(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25"
-              >
-                {accounts.filter(a => !['asset', 'liability'].includes(a.type) || a.id === 'assets-loans-mom').map(a => (
-                  <option key={a.id} value={a.id}>({a.code}) {a.name}</option>
-                ))}
-              </select>
+              <SearchableAccountSelect value={manualCatAcc} onChange={setManualCatAcc} accounts={accounts.filter(a => !['asset', 'liability'].includes(a.type) || a.id === 'assets-loans-mom')} placeholder="Search category by code or name"/>
             </div>
           </div>
 
           <div className="flex justify-end items-center gap-3 pt-2">
+            {postingError && <div className="mr-auto rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{postingError}</div>}
             {isDraftSaved && (
               <span className="text-zinc-500 text-[11px] flex items-center gap-1.5 animate-fadeIn mr-auto">
                 <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
@@ -632,7 +640,7 @@ export default function LedgerView() {
                 setManualCounterparty('');
                 setManualTagsText('');
                 setManualDate(new Date().toISOString().split('T')[0]);
-                setManualSourceAcc('assets-checking');
+                setManualSourceAcc(financialAccounts[0]?.id || '');
                 setManualCatAcc('suspense-uncategorized');
                 setEditingTxId(null);
                 localStorage.removeItem('qifi_draft_ledger');
@@ -645,9 +653,10 @@ export default function LedgerView() {
             </button>
             <button
               type="submit"
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow-md transition-all cursor-pointer"
+              disabled={isPosting}
+              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow-md transition-all cursor-pointer"
             >
-              {editingTxId ? 'Save Changes' : 'Add to Log'}
+              {isPosting ? 'Posting balanced entry…' : editingTxId ? 'Save Changes' : 'Post balanced entry'}
             </button>
           </div>
         </form>
