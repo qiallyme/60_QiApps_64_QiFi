@@ -9,6 +9,15 @@ function isJwt(token: string): boolean {
   return token.startsWith('ey') && token.split('.').length === 3;
 }
 
+function getAuthRedirectUrl(): string {
+  const configured = import.meta.env.VITE_AUTH_REDIRECT_URL?.trim();
+  if (configured) return configured.endsWith('/') ? configured : `${configured}/`;
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return `${window.location.origin}/`;
+  }
+  return 'https://fi.qially.com/';
+}
+
 // Core Views
 import LedgerView from './components/LedgerView';
 import ReviewQueueView from './components/ReviewQueueView';
@@ -402,7 +411,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signInWithOtp({
         email: nextEmail,
         options: {
-          emailRedirectTo: window.location.origin,
+          emailRedirectTo: getAuthRedirectUrl(),
         },
       });
       if (error) {
@@ -591,4 +600,3 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-
