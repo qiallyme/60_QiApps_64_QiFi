@@ -405,6 +405,7 @@ CREATE INDEX IF NOT EXISTS idx_categories_workspace ON public.categories(workspa
 CREATE INDEX IF NOT EXISTS idx_import_rows_raw_batch ON public.import_rows_raw(import_batch_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON public.transactions(transaction_date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_financial_account ON public.transactions(financial_account_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_reconciliation ON public.transactions(reconciliation_id);
 CREATE INDEX IF NOT EXISTS idx_journal_entries_transaction ON public.journal_entries(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON public.journal_lines(journal_entry_id);
 CREATE INDEX IF NOT EXISTS idx_journal_lines_ledger_account ON public.journal_lines(ledger_account_id);
