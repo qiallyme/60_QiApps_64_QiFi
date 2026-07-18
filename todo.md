@@ -21,6 +21,7 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 - `E8` Old standalone QiFi Worker source/configuration and stale hostname references were removed in the 2026-07-18 architecture cleanup.
 - `E9` Current production Pages bundle loaded its active hashed Ledger and TransactionForm modules successfully after deployment.
 - `E10` `docs/finance-api-route-matrix.md` records every QiFi caller, Worker route, auth boundary, and backing table/service. The production smoke runner passed syntax validation; TypeScript and the production build passed. Its live authenticated run is correctly blocked until the four dedicated smoke identity variables are provisioned.
+- `E11` QiApi commit `f90e773` extracts the journal-line accounting rule and adds Money In, Money Out, balance, and invalid-amount tests. The complete Worker suite passed: 2 files, 18 tests; TypeScript and ESLint also passed.
 
 ## Closure audit of every formerly unchecked item
 
@@ -72,8 +73,8 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 | TX-05 | Same tax mapping, reconciliation status, and explicit debit/credit controls | ACTUALLY_INCOMPLETE | These fields are not exposed in shared normal transaction form. Decide normal vs advanced visibility in Phase 2. |
 | TX-06 | Do not require negative expense input | COMPLETE_AND_VERIFIED | Positive UI amount plus direction creates signed amount. E6 |
 | TX-07 | Money In/Out/Transfer/Journal Entry selector | ACTUALLY_INCOMPLETE | Money In/Out exist; Transfer and Journal Entry modes do not. Phase 2. |
-| TX-08 | Convert direction to correct signed/debit/credit values | COMPLETE_BUT_NEEDS_VERIFICATION | Implemented; accounting assertions missing. |
-| TX-09 | Verify sign logic is not reversed | COMPLETE_BUT_NEEDS_VERIFICATION | Unit/integration accounting cases missing. |
+| TX-08 | Convert direction to correct signed/debit/credit values | COMPLETE_AND_VERIFIED | Money In/Out journal assertions pass. E11 |
+| TX-09 | Verify sign logic is not reversed | COMPLETE_AND_VERIFIED | Signed direction and balanced debit/credit tests pass. E11 |
 | TX-10 | Verify asset/liability/equity/revenue/expense behavior | ACTUALLY_INCOMPLETE | Needs accounting test matrix and any resulting fixes. Phase 2. |
 | TX-11 | Prevent double counting transaction and journal rows | COMPLETE_BUT_NEEDS_VERIFICATION | Projection uses journal entries, but reconciliation test is missing. |
 | TX-12 | Separate simple cash entry from advanced journal entry | ACTUALLY_INCOMPLETE | No explicit advanced journal workflow. Phase 2 after launch-normal flow. |
@@ -170,7 +171,8 @@ Only incomplete implementation and required verification remain here. Phases are
 - [ ] Store receipt evidence durably, run OCR, show extracted-field review, and map approved values into `TransactionForm` (`TX-14`).
 - [ ] Decide and implement normal-form visibility for tax mapping and reconciliation status (`TX-05`).
 - [ ] Implement or explicitly separate Transfer and advanced Journal Entry modes (`TX-07`, `TX-12`).
-- [ ] Add accounting tests for sign, debit/credit, account types, and double-count prevention (`TX-08` through `TX-11`).
+- [x] Add accounting tests for sign and debit/credit (`TX-08`, `TX-09`). Evidence: E11.
+- [ ] Add account-type and double-count prevention tests (`TX-10`, `TX-11`).
 - [ ] Add authenticated create/edit/attachment persistence tests for every shared field.
 - [ ] Assert each mutation updates balances, dashboard, reports, forecast, and review queue (`API-22`, `DATA-01` through `DATA-10`).
 
