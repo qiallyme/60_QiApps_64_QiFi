@@ -5,7 +5,9 @@
 
 import { supabase } from './supabase';
 
-const API_BASE_URL = import.meta.env.VITE_QIFINANCE_API_BASE_URL || 'https://api.qially.com';
+const API_BASE_URL = import.meta.env.PROD
+  ? 'https://api.qially.com'
+  : import.meta.env.VITE_QIFINANCE_API_BASE_URL || 'http://localhost:8787';
 const AUTH_STORAGE_KEY = 'qifi_api_token';
 
 function getStoredAuthToken(): string {
