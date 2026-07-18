@@ -5,15 +5,15 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQiStore } from '../store';
-import { Transaction, Account, LedgerEntry } from '../types';
+import { Transaction, LedgerEntry } from '../types';
 import { 
   Search, Filter, CheckCircle, AlertCircle, FileText, 
   HelpCircle, ChevronDown, ChevronUp, Trash2, Calendar, 
-  ArrowUpRight, ArrowDownLeft, Tag, DollarSign, RefreshCw, Plus, X, Edit2,
+  ArrowUpRight, ArrowDownLeft, Tag, RefreshCw, Plus, X, Edit2,
   Download, Upload, WandSparkles
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
-import SearchableAccountSelect from './SearchableAccountSelect';
+import TransactionForm from './TransactionForm';
 
 export default function LedgerView() {
   const { 
@@ -25,11 +25,9 @@ export default function LedgerView() {
     schedules, 
     getAccountBalance, 
     deleteTransaction,
-    addManualTransaction,
-    updateTransaction,
     exportData,
     importData,
-    financialAccounts, counterparties, addCounterparty,
+    financialAccounts,
     rules,
     addRule
   } = useQiStore();
@@ -38,9 +36,6 @@ export default function LedgerView() {
 
   // Editing transaction state
   const [editingTxId, setEditingTxId] = useState<string | null>(null);
-  const [isPosting, setIsPosting] = useState(false);
-  const [postingError, setPostingError] = useState('');
-  const [newCounterpartyName, setNewCounterpartyName] = useState('');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleBackup = () => {
@@ -94,122 +89,6 @@ export default function LedgerView() {
     }
   }, [pathname]);
 
-  const [manualDate, setManualDate] = useState(() => {
-    const draft = localStorage.getItem('qifi_draft_ledger');
-    if (draft) {
-      try {
-        const parsed = JSON.parse(draft);
-        if (parsed.manualDate) return parsed.manualDate;
-      } catch (e) {}
-    }
-    return new Date().toISOString().split('T')[0];
-  });
-
-  const [manualDesc, setManualDesc] = useState(() => {
-    const draft = localStorage.getItem('qifi_draft_ledger');
-    if (draft) {
-      try {
-        const parsed = JSON.parse(draft);
-        if (parsed.manualDesc !== undefined) return parsed.manualDesc;
-      } catch (e) {}
-    }
-    return '';
-  });
-
-  const [manualAmount, setManualAmount] = useState(() => {
-    const draft = localStorage.getItem('qifi_draft_ledger');
-    if (draft) {
-      try {
-        const parsed = JSON.parse(draft);
-        if (parsed.manualAmount !== undefined) return parsed.manualAmount;
-      } catch (e) {}
-    }
-    return '';
-  });
-  const [manualDirection, setManualDirection] = useState<'out' | 'in'>('out');
-
-  const [manualSourceAcc, setManualSourceAcc] = useState(() => {
-    const draft = localStorage.getItem('qifi_draft_ledger');
-    if (draft) {
-      try {
-        const parsed = JSON.parse(draft);
-        if (parsed.manualSourceAcc) return parsed.manualSourceAcc;
-      } catch (e) {}
-    }
-    return '';
-  });
-
-  // Ensure default financial account is set when they load
-  useEffect(() => {
-    if (!manualSourceAcc && financialAccounts.length > 0) {
-      setManualSourceAcc(financialAccounts[0].id);
-    }
-  }, [financialAccounts, manualSourceAcc]);
-
-  const [manualCatAcc, setManualCatAcc] = useState(() => {
-    const draft = localStorage.getItem('qifi_draft_ledger');
-    if (draft) {
-      try {
-        const parsed = JSON.parse(draft);
-        if (parsed.manualCatAcc) return parsed.manualCatAcc;
-      } catch (e) {}
-    }
-    return 'suspense-uncategorized';
-  });
-
-  const [manualCounterparty, setManualCounterparty] = useState(() => {
-    const draft = localStorage.getItem('qifi_draft_ledger');
-    if (draft) {
-      try {
-        const parsed = JSON.parse(draft);
-        if (parsed.manualCounterparty !== undefined) return parsed.manualCounterparty;
-      } catch (e) {}
-    }
-    return '';
-  });
-
-  const [manualTagsText, setManualTagsText] = useState(() => {
-    const draft = localStorage.getItem('qifi_draft_ledger');
-    if (draft) {
-      try {
-        const parsed = JSON.parse(draft);
-        if (parsed.manualTagsText !== undefined) return parsed.manualTagsText;
-      } catch (e) {}
-    }
-    return '';
-  });
-
-  // Autosave Draft effect
-  const [isDraftSaved, setIsDraftSaved] = useState(false);
-
-  useEffect(() => {
-    const hasValue = !!(
-      manualDesc || 
-      manualAmount || 
-      manualCounterparty || 
-      manualTagsText || 
-      manualDate !== new Date().toISOString().split('T')[0] || 
-      manualSourceAcc !== 'assets-checking' || 
-      manualCatAcc !== 'suspense-uncategorized'
-    );
-    
-    if (hasValue) {
-      const draft = {
-        manualDate,
-        manualDesc,
-        manualAmount,
-        manualSourceAcc,
-        manualCatAcc,
-        manualCounterparty,
-        manualTagsText
-      };
-      localStorage.setItem('qifi_draft_ledger', JSON.stringify(draft));
-      setIsDraftSaved(true);
-    } else {
-      localStorage.removeItem('qifi_draft_ledger');
-      setIsDraftSaved(false);
-    }
-  }, [manualDate, manualDesc, manualAmount, manualSourceAcc, manualCatAcc, manualCounterparty, manualTagsText]);
 
   // Collect all unique tags
   const allTags = useMemo(() => {
@@ -439,57 +318,6 @@ export default function LedgerView() {
     });
   }, [transactions, searchTerm, filterAccount, filterTag, filterReconciled, filterEvidence, filterDateRange, ledgerEntries, attachments]);
 
-  const handleAddManualSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isPosting) return;
-    if (!manualDesc || !manualAmount || isNaN(Number(manualAmount)) || !manualSourceAcc || !manualCatAcc) {
-      setPostingError('Date, amount, description, financial account, and category are required.');
-      return;
-    }
-
-    const amount = manualDirection === 'out' ? -Math.abs(Number(manualAmount)) : Math.abs(Number(manualAmount));
-    const tags = manualTagsText.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-
-    setPostingError('');
-    setIsPosting(true);
-    try {
-      let finalCounterparty = manualCounterparty;
-      if (manualCounterparty === '__new__') {
-        finalCounterparty = newCounterpartyName.trim();
-        if (!finalCounterparty) throw new Error('Enter a name for the new counterparty.');
-        await addCounterparty({ name: finalCounterparty, description: 'Created while posting a transaction', tags: [], isBusiness: true, relationshipType: 'Other' });
-      }
-      if (editingTxId) {
-        await updateTransaction(editingTxId, {
-        date: manualDate,
-        description: manualDesc,
-        amount,
-        sourceAccountId: manualSourceAcc,
-        tags,
-        counterparty: finalCounterparty || 'Cash/Adjustment'
-      }, manualCatAcc);
-      } else {
-        const created = await addManualTransaction({
-        date: manualDate,
-        description: manualDesc,
-        rawDescription: 'MANUAL ENTRY: ' + manualDesc,
-        amount,
-        sourceAccountId: manualSourceAcc,
-        tags,
-        counterparty: finalCounterparty || 'Cash/Adjustment'
-      }, manualCatAcc);
-        if (!created) throw new Error('The ledger post was not saved. Your form has been preserved.');
-      }
-
-      setManualDesc(''); setManualAmount(''); setManualCounterparty(''); setNewCounterpartyName(''); setManualTagsText('');
-      setEditingTxId(null); localStorage.removeItem('qifi_draft_ledger'); setIsDraftSaved(false); setShowAddForm(false);
-    } catch (error) {
-      setPostingError(error instanceof Error ? error.message : 'Ledger posting failed. Nothing was cleared.');
-    } finally {
-      setIsPosting(false);
-    }
-  };
-
   return (
     <div className="space-y-6">
       {/* HEADER SECTION */}
@@ -524,7 +352,7 @@ export default function LedgerView() {
           </label>
 
           <button
-            onClick={() => setShowAddForm(!showAddForm)}
+            onClick={() => { if (showAddForm) setEditingTxId(null); setShowAddForm(!showAddForm); }}
             className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-lg hover:shadow-emerald-950/50 transition-all cursor-pointer border border-emerald-500/30 self-start sm:self-center"
             id="btn-add-manual"
           >
@@ -534,142 +362,16 @@ export default function LedgerView() {
         </div>
       </div>
 
-      {/* MANUAL TRANSACTION POSTING FORM */}
-      {showAddForm && (
-        <form onSubmit={handleAddManualSubmit} className="bg-zinc-900/60 p-6 rounded-2xl border border-zinc-800/80 shadow-2xl backdrop-blur-md space-y-4 animate-fadeIn">
-          <h3 className="font-semibold text-zinc-100 text-base flex items-center gap-2">
-            <DollarSign className="text-emerald-400" size={18} />
-            {editingTxId ? 'Edit Balanced Ledger Entry' : 'Post New Double-Entry Balanced Entry'}
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Date */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-400 mb-1">Date</label>
-              <input 
-                type="date" 
-                value={manualDate} 
-                onChange={e => setManualDate(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-zinc-400 mb-1">Direction</label>
-              <select value={manualDirection} onChange={e => setManualDirection(e.target.value as 'out' | 'in')} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100">
-                <option value="out">Money Out / Expense</option>
-                <option value="in">Money In / Income</option>
-              </select>
-            </div>
-            {/* Amount */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-400 mb-1">Amount</label>
-              <input 
-                type="number" 
-                step="0.01"
-                placeholder="50.00"
-                value={manualAmount} 
-                onChange={e => setManualAmount(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25 placeholder:text-zinc-600"
-                required
-              />
-            </div>
-            {/* Counterparty */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-400 mb-1">Merchant / Person</label>
-              <select
-                value={manualCounterparty} 
-                onChange={e => setManualCounterparty(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25 placeholder:text-zinc-600"
-              ><option value="">Select counterparty (optional)</option>{counterparties.map(counterparty => <option key={counterparty.id} value={counterparty.name}>{counterparty.name}</option>)}<option value="__new__">+ Add missing counterparty</option></select>
-              {manualCounterparty === '__new__' && <input autoFocus value={newCounterpartyName} onChange={(event) => setNewCounterpartyName(event.target.value)} placeholder="New counterparty name" className="mt-2 w-full bg-zinc-950 border border-emerald-500/40 rounded-xl px-3 py-2 text-sm text-zinc-100"/>}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Description */}
-            <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-zinc-400 mb-1">Description / Memo</label>
-              <input 
-                type="text" 
-                placeholder="Software licensing, caregiving gift, loan payback"
-                value={manualDesc} 
-                onChange={e => setManualDesc(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25 placeholder:text-zinc-600"
-                required
-              />
-            </div>
-            {/* Tags */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-400 mb-1">Tags (Comma separated)</label>
-              <input 
-                type="text" 
-                placeholder="mom, business, tax"
-                value={manualTagsText} 
-                onChange={e => setManualTagsText(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25 placeholder:text-zinc-600"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Source Account */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-400 mb-1">Bank Account / Card Used</label>
-              <select
-                value={manualSourceAcc}
-                onChange={e => setManualSourceAcc(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25"
-              >
-                {financialAccounts.map(fa => (
-                  <option key={fa.id} value={fa.id}>({fa.institution}) {fa.name} - ${fa.currentBalance.toFixed(2)}</option>
-                ))}
-              </select>
-            </div>
-            {/* Category Account */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-400 mb-1">Category (Where did the money go or come from?)</label>
-              <SearchableAccountSelect value={manualCatAcc} onChange={setManualCatAcc} accounts={accounts.filter(a => !['asset', 'liability'].includes(a.type) || a.id === 'assets-loans-mom')} placeholder="Search category by code or name"/>
-            </div>
-          </div>
-
-          <div className="flex justify-end items-center gap-3 pt-2">
-            {postingError && <div className="mr-auto rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{postingError}</div>}
-            {isDraftSaved && (
-              <span className="text-zinc-500 text-[11px] flex items-center gap-1.5 animate-fadeIn mr-auto">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                Draft autosaved
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setManualDesc('');
-                setManualAmount('');
-                setManualCounterparty('');
-                setManualTagsText('');
-                setManualDate(new Date().toISOString().split('T')[0]);
-                setManualSourceAcc(financialAccounts[0]?.id || '');
-                setManualCatAcc('suspense-uncategorized');
-                setEditingTxId(null);
-                localStorage.removeItem('qifi_draft_ledger');
-                setIsDraftSaved(false);
-                setShowAddForm(false);
-              }}
-              className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isPosting}
-              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow-md transition-all cursor-pointer"
-            >
-              {isPosting ? 'Posting balanced entry…' : editingTxId ? 'Save Changes' : 'Post balanced entry'}
-            </button>
-          </div>
-        </form>
-      )}
-
+      {/* Create and edit share one schema, payload, dropdown set, and attachment workflow. */}
+      {showAddForm && <div key={editingTxId || 'new'}><TransactionForm
+        transaction={editingTxId ? transactions.find((transaction) => transaction.id === editingTxId) || null : null}
+        categoryAccountId={editingTxId ? (() => {
+          const transaction = transactions.find((item) => item.id === editingTxId);
+          if (!transaction) return 'suspense-uncategorized';
+          return ledgerEntries.find((entry) => entry.transactionId === transaction.id && entry.accountId !== transaction.sourceAccountId)?.accountId || 'suspense-uncategorized';
+        })() : 'suspense-uncategorized'}
+        onCancel={() => { setEditingTxId(null); setShowAddForm(false); }}
+      /></div>}
       {/* ZEN SOLVER (QUICK ANSWERS PANEL) */}
       <div className="bg-amber-500/5 border border-amber-500/20 p-5 rounded-2xl shadow-xl">
         <h3 className="text-sm font-semibold text-amber-400 font-display flex items-center gap-2 mb-3">
@@ -1109,22 +811,6 @@ export default function LedgerView() {
                             <button
                               onClick={() => {
                                 setEditingTxId(tx.id);
-                                setManualDate(tx.date);
-                                setManualDirection(tx.amount < 0 ? 'out' : 'in');
-                                setManualAmount(String(Math.abs(tx.amount)));
-                                setManualCounterparty(tx.counterparty || '');
-                                setManualDesc(tx.description);
-                                setManualTagsText(tx.tags.join(', '));
-                                setManualSourceAcc(tx.sourceAccountId);
-
-                                const txLedgers = ledgerEntries.filter(le => le.transactionId === tx.id);
-                                const catLedger = txLedgers.find(le => le.accountId !== tx.sourceAccountId);
-                                if (catLedger) {
-                                  setManualCatAcc(catLedger.accountId);
-                                } else {
-                                  setManualCatAcc('suspense-uncategorized');
-                                }
-
                                 setShowAddForm(true);
                                 window.scrollTo({ top: 0, behavior: 'smooth' });
                               }}

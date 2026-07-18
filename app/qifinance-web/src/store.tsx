@@ -62,7 +62,7 @@ interface QiContextType {
   bulkIgnoreRows: (rowIds: string[]) => void;
   
   addManualTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'> & { id?: string }, categoryAccountId: string) => Promise<Transaction | null>;
-  updateTransaction: (txId: string, updatedTx: Partial<Omit<Transaction, 'id' | 'createdAt'>>, categoryAccountId?: string) => void;
+  updateTransaction: (txId: string, updatedTx: Partial<Omit<Transaction, 'id' | 'createdAt'>>, categoryAccountId?: string) => Promise<void>;
   deleteTransaction: (id: string) => void;
   
   addAttachment: (
@@ -76,8 +76,8 @@ interface QiContextType {
     counterpartyId?: string | null,
     obligationId?: string | null,
     scheduleId?: string | null
-  ) => void;
-  deleteAttachment: (id: string) => void;
+  ) => Promise<void>;
+  deleteAttachment: (id: string) => Promise<void>;
   
   addStatement: (statement: Omit<Statement, 'id' | 'isReconciled'>) => void;
   updateStatement: (statement: Statement) => void;
@@ -983,10 +983,13 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       if (updatedTx.date) updates.date = updatedTx.date;
       if (updatedTx.description) updates.description = updatedTx.description;
       if (updatedTx.amount !== undefined) updates.amount = updatedTx.amount;
-      if (updatedTx.sourceAccountId) updates.source_account_id = updatedTx.sourceAccountId;
+      if (updatedTx.sourceAccountId) updates.sourceAccountId = updatedTx.sourceAccountId;
+      if (updatedTx.rawDescription) updates.rawDescription = updatedTx.rawDescription;
       if (updatedTx.tags) updates.tags = updatedTx.tags;
       if (updatedTx.counterparty) updates.counterparty = updatedTx.counterparty;
       if (updatedTx.reconciliationId !== undefined) updates.reconciliation_id = updatedTx.reconciliationId;
+      if (updatedTx.importBatchId !== undefined) updates.importBatchId = updatedTx.importBatchId;
+      if (updatedTx.classificationStatus !== undefined) updates.classificationStatus = updatedTx.classificationStatus;
       if (categoryAccountId) updates.categoryAccountId = categoryAccountId;
 
       await qifinanceApi.updateTransaction(txId, updates);
@@ -994,7 +997,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       return;
     } catch (err) {
       reportSyncError('Update transaction', err);
-      return;
+      throw err;
     }
   };
 
@@ -1034,12 +1037,13 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
     } catch (err) {
       reportSyncError('Upload attachment', err);
+      throw err;
     }
   };
 
   const deleteAttachment = async (id: string) => {
     try { await qifinanceApi.deleteAttachment(id); await refreshApiState(); }
-    catch (err) { reportSyncError('Delete attachment', err); }
+    catch (err) { reportSyncError('Delete attachment', err); throw err; }
   };
 
   // -------------------------

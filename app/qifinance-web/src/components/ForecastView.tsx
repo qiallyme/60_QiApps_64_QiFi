@@ -6,6 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQiStore } from '../store';
 import { RecurringSchedule } from '../types';
+import TransactionForm from './TransactionForm';
 import { 
   Calendar, CreditCard, ArrowUpRight, ArrowDownLeft, Plus, 
   Trash2, ToggleLeft, ToggleRight, DollarSign, TrendingUp, Sparkles, X, PlusCircle,
@@ -676,96 +677,14 @@ export default function ForecastView() {
         </div>
       </div>
 
-      {/* QUICK TRANSACTION MODAL OVERLAY */}
+      {/* Dashboard creation uses the same transaction contract as ledger create/edit. */}
       {quickModal === 'transaction' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-          <form onSubmit={handleQuickTxSubmit} className="bg-zinc-900 border border-zinc-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
-              <h4 className="font-bold text-white text-sm flex items-center gap-1.5 font-display">
-                <ArrowUpRight className="text-emerald-400" size={18} />
-                Post Manual balanced Transaction
-              </h4>
-              <button type="button" onClick={() => setQuickModal(null)} className="text-zinc-500 hover:text-white"><X size={16} /></button>
-            </div>
-            
-            <div className="grid grid-cols-3 gap-3.5">
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Date</label>
-                <input type="date" value={qTxDate} onChange={e => setQTxDate(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-700" required />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Direction</label>
-                <select value={qTxDirection} onChange={e => setQTxDirection(e.target.value as 'out' | 'in')} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100"><option value="out">Money Out</option><option value="in">Money In</option></select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Amount</label>
-                <input type="number" min="0" step="0.01" placeholder="24.50" value={qTxAmount} onChange={e => setQTxAmount(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-700" required />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3.5">
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Checking / Credit Card Account</label>
-                <select 
-                  value={qTxSourceAcc || (financialAccounts.length > 0 ? financialAccounts[0].id : '')}
-                  onChange={e => setQTxSourceAcc(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50"
-                >
-                  {financialAccounts.map(fa => (
-                    <option key={fa.id} value={fa.id}>{fa.name} ({fa.institution}) - ${fa.currentBalance.toFixed(2)}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Expense / Income Category</label>
-                <select value={qTxCatAcc} onChange={e => setQTxCatAcc(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-zinc-700">
-                  {accounts.filter(a => !['asset', 'liability'].includes(a.type)).map(a => (
-                    <option key={a.id} value={a.id}>({a.code}) {a.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3.5">
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Counterparty Merchant</label>
-                <input type="text" placeholder="e.g. Google Cloud" value={qTxCounterparty} onChange={e => setQTxCounterparty(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-700" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Tags (comma-separated)</label>
-                <input type="text" placeholder="software, business" value={qTxTagsText} onChange={e => setQTxTagsText(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-700" />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Description / Memo</label>
-              <input type="text" placeholder="Lease rent billing or cloud server platform..." value={qTxDesc} onChange={e => setQTxDesc(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-700" required />
-            </div>
-
-            {/* Receipt uploader */}
-            <div className="p-3.5 bg-zinc-950 rounded-xl border border-zinc-850 space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase block tracking-wider">Source Receipt Attachment</span>
-                <label className="bg-zinc-900 border border-zinc-800 hover:border-emerald-500 text-zinc-400 hover:text-white px-2 py-1 rounded text-[9px] font-bold cursor-pointer transition-all">
-                  Upload file
-                  <input type="file" accept="image/*,application/pdf,text/*,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" className="hidden" onChange={e => handleQuickFileChange(e, setQTxFileName, setQTxFileType, setQTxFileDataUrl)} />
-                </label>
-              </div>
-              {qTxFileName ? (
-                <div className="text-[10px] text-emerald-400 font-mono font-bold truncate">✓ Attached: {qTxFileName}</div>
-              ) : (
-                <div className="text-[9px] text-zinc-600 italic">Optional PDF or receipt image for compliance evidence</div>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2.5 pt-2">
-              <button type="button" onClick={() => setQuickModal(null)} className="bg-zinc-800 hover:bg-zinc-750 text-zinc-300 px-4 py-2 rounded-xl text-xs font-bold">Cancel</button>
-              <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md">Post Transaction</button>
-            </div>
-          </form>
+        <div className="fixed inset-0 z-50 overflow-y-auto p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="mx-auto max-w-4xl py-8">
+            <TransactionForm onCancel={() => setQuickModal(null)} />
+          </div>
         </div>
       )}
-
       {/* QUICK BILL / OBLIGATION / SCHEDULE MODAL OVERLAY */}
       {quickModal === 'bill' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
