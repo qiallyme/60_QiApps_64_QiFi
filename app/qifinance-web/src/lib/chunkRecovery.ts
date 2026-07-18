@@ -19,17 +19,17 @@ async function clearQiFiShellCaches(): Promise<void> {
 
 export async function reloadLatestQiFiVersion(): Promise<void> {
   try {
+    sessionStorage.removeItem(CHUNK_RECOVERY_KEY);
     await clearQiFiShellCaches();
     if ('serviceWorker' in navigator) {
       const registrations = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(registrations.map((registration) => registration.update()));
+      await Promise.all(registrations.map((registration) => registration.unregister()));
     }
   } catch (error) {
     console.warn('QiFi could not fully refresh its offline cache before reloading:', error);
   } finally {
-    const url = new URL(window.location.href);
-    url.searchParams.set('app-refresh', Date.now().toString());
-    window.location.replace(url.toString());
+    const route = window.location.hash;
+    window.location.replace(`/?app-refresh=${Date.now()}${route}`);
   }
 }
 

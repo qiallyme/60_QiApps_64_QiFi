@@ -1,4 +1,4 @@
-const CACHE_NAME = 'qifi-shell-v5';
+const CACHE_NAME = 'qifi-shell-v6';
 const SHELL_ASSETS = [
   '/manifest.webmanifest',
   '/qifi-icon-192.png',
@@ -45,17 +45,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (url.origin === self.location.origin) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        })
-        .catch(() => caches.match(request).then((cached) => cached || Response.error()))
-    );
-  }
+  // Hashed JavaScript and CSS must always come from the active deployment.
+  // Caching those files can combine an old application shell with new chunks.
 });
