@@ -48,7 +48,10 @@ export default function ForecastView() {
     addObligation,
     counterparties,
     addAttachment,
-    financialAccounts
+    financialAccounts,
+    transactions,
+    rawRows,
+    obligations
   } = useQiStore();
   const [forecastAccountId, setForecastAccountId] = useState(() => financialAccounts[0]?.id || '');
 
@@ -389,8 +392,32 @@ export default function ForecastView() {
   const currentCheckingBalance = useMemo(() => {
     const financial = financialAccounts.find(account => account.id === forecastAccountId);
     if (!financial) return 0;
-    return Number.isFinite(financial.currentBalance) ? financial.currentBalance : getAccountBalance(financial.defaultLedgerAccountId || '');
+    const calculatedBalance = getAccountBalance(financial.defaultLedgerAccountId || financial.id);
+    return calculatedBalance !== 0 ? calculatedBalance : Number(financial.currentBalance || 0);
   }, [financialAccounts, forecastAccountId, getAccountBalance]);
+
+  const dashboardSummary = useMemo(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const selectedTransactions = transactions.filter((tx) =>
+      (!forecastAccountId || tx.sourceAccountId === forecastAccountId) &&
+      new Date(`${tx.date}T00:00:00`) >= monthStart
+    );
+    const income = selectedTransactions
+      .filter((tx) => tx.amount > 0)
+      .reduce((sum, tx) => sum + tx.amount, 0);
+    const spending = selectedTransactions
+      .filter((tx) => tx.amount < 0)
+      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+    return {
+      income,
+      spending,
+      net: income - spending,
+      needsReview: rawRows.filter((row) => row.status === 'pending').length +
+        transactions.filter((tx) => tx.classificationStatus === 'needs_review').length,
+      openObligations: obligations.filter((obligation) => obligation.status === 'active').length,
+    };
+  }, [forecastAccountId, obligations, rawRows, transactions]);
 
   // Compute 90-Day Projected Rollforward Timeline
   const projectedTimeline = useMemo(() => {
@@ -541,6 +568,27 @@ export default function ForecastView() {
             <TrendingUp size={12} className="text-emerald-400" /> Projected Balance Trend Up
           </span>
         </div>
+      </div>
+
+      {/* LIVE OPERATIONAL SUMMARY */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {[
+          { label: 'Income This Month', value: dashboardSummary.income, tone: 'text-emerald-400', money: true },
+          { label: 'Spent This Month', value: dashboardSummary.spending, tone: 'text-rose-400', money: true },
+          { label: 'Net Cash Flow', value: dashboardSummary.net, tone: dashboardSummary.net >= 0 ? 'text-emerald-400' : 'text-rose-400', money: true },
+          { label: 'Needs Review', value: dashboardSummary.needsReview, tone: dashboardSummary.needsReview ? 'text-amber-400' : 'text-zinc-200', money: false },
+          { label: 'Open Obligations', value: dashboardSummary.openObligations, tone: dashboardSummary.openObligations ? 'text-sky-400' : 'text-zinc-200', money: false },
+        ].map((metric) => (
+          <div key={metric.label} className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-4 min-w-0">
+            <div className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 truncate">{metric.label}</div>
+            <div className={`mt-2 text-xl font-bold font-mono ${metric.tone}`}>
+              {metric.money
+                ? `${Number(metric.value) < 0 ? '-' : ''}$${Math.abs(Number(metric.value)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : metric.value}
+            </div>
+            <div className="mt-1 text-[9px] text-zinc-600">Live from the selected account</div>
+          </div>
+        ))}
       </div>
 
       {/* ZEN OPERATIONS COMMAND BAR */}

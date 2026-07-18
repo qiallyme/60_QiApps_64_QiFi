@@ -753,12 +753,14 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // Helper: Get running balance of an account
   const getAccountBalance = (accountId: string): number => {
     let balance = 0;
-    const account = accounts.find(a => a.id === accountId);
+    const financialAccount = financialAccounts.find(a => a.id === accountId);
+    const ledgerAccountId = financialAccount?.defaultLedgerAccountId || accountId;
+    const account = accounts.find(a => a.id === ledgerAccountId);
     if (!account) return 0;
 
     // sum ledger items
     ledgerEntries.forEach(entry => {
-      if (entry.accountId === accountId) {
+      if (entry.accountId === ledgerAccountId) {
         if (['asset', 'expense', 'clearing', 'suspense'].includes(account.type)) {
           // debits increase, credits decrease
           balance += entry.debit - entry.credit;
@@ -1147,14 +1149,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return;
     } catch (err) {
-      console.warn("Failed to delete transaction on API, using local fallback:", err);
+      console.error("Failed to delete transaction in Supabase; local state was not changed:", err);
+      return;
     }
-
-    const nextTxs = transactions.filter(t => t.id !== id);
-    const nextLedgers = ledgerEntries.filter(le => le.transactionId !== id);
-    const nextAttachments = attachments.filter(a => a.transactionId !== id);
-    
-    saveAll(accounts, nextTxs, nextLedgers, importBatches, rawRows, rules, nextAttachments, statements, schedules);
   };
 
   const updateTransaction = async (
@@ -1177,68 +1174,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return;
     } catch (err) {
-      console.warn("Failed to update transaction on API, using local fallback:", err);
+      console.error("Failed to update transaction in Supabase; local state was not changed:", err);
+      return;
     }
-
-    const tx = transactions.find(t => t.id === txId);
-    if (!tx) return;
-
-    const newTx: Transaction = {
-      ...tx,
-      ...updatedTx,
-      date: updatedTx.date ?? tx.date,
-      description: updatedTx.description ?? tx.description,
-      amount: updatedTx.amount ?? tx.amount,
-      sourceAccountId: updatedTx.sourceAccountId ?? tx.sourceAccountId,
-      counterparty: updatedTx.counterparty ?? tx.counterparty,
-      tags: updatedTx.tags ?? tx.tags,
-    };
-
-    let catAccId = categoryAccountId;
-    if (!catAccId) {
-      const txLedgers = ledgerEntries.filter(le => le.transactionId === txId);
-      const catLedger = txLedgers.find(le => le.accountId !== tx.sourceAccountId);
-      catAccId = catLedger ? catLedger.accountId : 'suspense-uncategorized';
-    }
-
-    const absoluteAmount = Math.abs(newTx.amount);
-    let sourceDebit = 0;
-    let sourceCredit = 0;
-    let categoryDebit = 0;
-    let categoryCredit = 0;
-
-    if (newTx.amount < 0) {
-      sourceCredit = absoluteAmount;
-      categoryDebit = absoluteAmount;
-    } else {
-      sourceDebit = absoluteAmount;
-      categoryCredit = absoluteAmount;
-    }
-
-    const baseLedgers = ledgerEntries.filter(le => le.transactionId !== txId);
-    const newLedgers: LedgerEntry[] = [
-      {
-        id: `led-${txId}-src`,
-        transactionId: txId,
-        accountId: newTx.sourceAccountId,
-        debit: sourceDebit,
-        credit: sourceCredit,
-        date: newTx.date
-      },
-      {
-        id: `led-${txId}-cat`,
-        transactionId: txId,
-        accountId: catAccId,
-        debit: categoryDebit,
-        credit: categoryCredit,
-        date: newTx.date
-      }
-    ];
-
-    const nextTxs = transactions.map(t => t.id === txId ? newTx : t);
-    const nextLedgers = [...baseLedgers, ...newLedgers];
-
-    saveAll(accounts, nextTxs, nextLedgers, importBatches, rawRows, rules, attachments, statements, schedules);
   };
 
   // -------------------------
