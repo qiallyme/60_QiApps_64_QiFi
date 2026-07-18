@@ -8,15 +8,13 @@ import { useQiStore } from '../store';
 import { 
   Settings as SettingsIcon, Download, Upload, RefreshCw, 
   Shield, HelpCircle, HardDrive, Database, Info, Trash2,
-  CheckCircle, AlertTriangle, X, Key, Eye, EyeOff, Sun, Moon, Palette
+  CheckCircle, AlertTriangle, X, Sun, Moon, Palette
 } from 'lucide-react';
 
 export default function SettingsView() {
   const { exportData, importData, resetToDefault, clearToBlankLedger } = useQiStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('qifi_user_openai_api_key') || '');
-  const [showKey, setShowKey] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('qifi_theme') || 'dark');
   const [accent, setAccent] = useState(() => localStorage.getItem('qifi_accent') || 'emerald');
 
@@ -26,25 +24,6 @@ export default function SettingsView() {
     localStorage.setItem('qifi_accent', nextAccent);
     document.documentElement.dataset.theme = nextTheme;
     document.documentElement.dataset.accent = nextAccent;
-  };
-
-  const handleSaveApiKey = () => {
-    localStorage.setItem('qifi_user_openai_api_key', apiKey.trim());
-    showAlert(
-      "API Key Saved",
-      "Your OpenAI API key has been securely saved to browser storage.",
-      "success"
-    );
-  };
-
-  const handleClearApiKey = () => {
-    setApiKey('');
-    localStorage.removeItem('qifi_user_openai_api_key');
-    showAlert(
-      "API Key Removed",
-      "Your OpenAI API key has been cleared.",
-      "info"
-    );
   };
 
   // Custom modal states
@@ -254,57 +233,8 @@ export default function SettingsView() {
           </div>
         </div>
 
-        {/* Right Column: AI Config & Philosophy */}
+        {/* Right Column: Security & Philosophy */}
         <div className="space-y-6">
-          {/* AI Settings Card */}
-          <div className="bg-zinc-900/30 border border-zinc-800/80 p-6 rounded-2xl space-y-4 backdrop-blur-sm">
-            <h3 className="text-sm font-semibold text-zinc-100 flex items-center gap-2 font-display">
-              <Key size={16} className="text-emerald-400" />
-              Qi Assistant API Key
-            </h3>
-            
-            <p className="text-xs text-zinc-450 font-sans leading-relaxed">
-              Enter your own OpenAI API key to run private financial operation prompts through the Qi Assistant. The key is securely saved directly in your browser cache.
-            </p>
-
-            <div className="space-y-3">
-              <div className="relative flex items-center">
-                <input
-                  type={showKey ? "text" : "password"}
-                  placeholder="sk-proj-..."
-                  value={apiKey}
-                  onChange={e => setApiKey(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800/60 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-zinc-105 font-mono focus:outline-none focus:border-zinc-700 placeholder:text-zinc-700"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowKey(!showKey)}
-                  className="absolute right-3.5 text-zinc-500 hover:text-zinc-300"
-                >
-                  {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-
-              <div className="flex gap-2 justify-end">
-                {localStorage.getItem('qifi_user_openai_api_key') && (
-                  <button
-                    onClick={handleClearApiKey}
-                    className="bg-zinc-850 hover:bg-zinc-800 text-zinc-300 text-[10px] font-bold px-3 py-1.5 rounded-lg border border-zinc-800 hover:border-zinc-700 transition-colors cursor-pointer"
-                  >
-                    Clear Key
-                  </button>
-                )}
-                <button
-                  onClick={handleSaveApiKey}
-                  disabled={!apiKey.trim()}
-                  className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-950 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-                >
-                  Save API Key
-                </button>
-              </div>
-            </div>
-          </div>
-
           {/* Philosophy Card */}
           <div className="bg-zinc-900/30 border border-zinc-800/80 p-6 rounded-2xl space-y-4 backdrop-blur-sm">
             <h3 className="text-sm font-semibold text-zinc-100 flex items-center gap-2 font-display">

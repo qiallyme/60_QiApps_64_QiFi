@@ -10,6 +10,10 @@ const API_BASE_URL = import.meta.env.PROD
   : import.meta.env.VITE_QIFINANCE_API_BASE_URL || 'http://localhost:8787';
 const AUTH_STORAGE_KEY = 'qifi_api_token';
 
+// Older builds accepted a provider secret in browser storage. The Worker now
+// owns that secret, so remove any legacy copy and never transmit it.
+localStorage.removeItem('qifi_user_openai_api_key');
+
 function getStoredAuthToken(): string {
   return localStorage.getItem(AUTH_STORAGE_KEY)?.trim() || '';
 }
@@ -282,12 +286,7 @@ export const qifinanceApi = {
   },
 
   async askAssistant(message: string, threadId?: string): Promise<AssistantResponse> {
-    const userApiKey = localStorage.getItem('qifi_user_openai_api_key') || '';
-    const headers: Record<string, string> = {};
-    if (userApiKey) {
-      headers['x-openai-api-key'] = userApiKey;
-    }
-    return postJson('/api/finance/assistant', { message, threadId }, 'QiFi Assistant request failed', { headers });
+    return postJson('/api/finance/assistant', { message, threadId }, 'QiFi Assistant request failed');
   },
 
   async executeAssistantPlan(planId: string, stepIds: string[]): Promise<AssistantResponse> {
