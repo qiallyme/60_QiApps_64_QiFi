@@ -219,3 +219,29 @@ Before reporting completion, demonstrate this exact flow:
 8. Confirm forecast balances update.
 9. Refresh the browser and confirm all changes remain.
 10. Repeat the workflow on a mobile viewport without layout breakage.
+
+## 2026-07-18 Code and Architecture Audit Result
+
+Implemented and verified in source/build:
+
+* QiFinance now has one finance API client, defaulting to `https://api.qially.com`, with all finance data routed through `/api/finance/*` in `251_QiApi`.
+* Direct browser Supabase access is limited to supported authentication/session handling.
+* The duplicate standalone `app/qifinance-worker`, its Wrangler configuration/cache, stale mock service, old hostname references, and deployed `qifinance-api` Worker were removed.
+* Central-API state is authoritative. Failed reads/writes display a synchronization error rather than silently substituting mock or browser-only financial data.
+* Transactions, imports, classifications, review-queue status, attachments, statements, reconciliation, schedules, counterparties, and obligations refresh central state after successful mutations.
+* Normal manual transaction forms now use explicit Money In/Money Out direction and convert positive user input to the correct signed amount.
+* Dashboard loading, failure, retry, and last-updated states are visible; summaries use hydrated live transactions.
+* Frontend TypeScript lint and production build pass. `251_QiApi` TypeScript typecheck passes.
+
+Intentionally retained localStorage uses are non-authoritative preferences, form drafts, optional user-supplied assistant key/token, and explicit backup/export tooling. They are not used as a fallback for failed live finance persistence.
+
+Still requiring an authenticated human/live-data verification before the corresponding checklist boxes may be marked complete:
+
+* The exact Required Completion Test above, including direct Supabase record inspection and sign-out/sign-in persistence.
+* Browser network/console evidence from an authenticated production session.
+* Visual checks at every listed viewport and installed-PWA standalone testing.
+* Full visual-system and dashboard-preference acceptance review.
+
+Existing API test-suite note: finance route typechecking passes, but three pre-existing environment-sensitive tests are not green when the repository `.dev.vars` is loaded (environment expectation, readiness error classification, and CORS origin expectation). These are recorded as unresolved verification work rather than treated as evidence of finance-route failure.
+
+* [ ] correct this error: This screen could not render - Your financial data was not deleted. QiFi found an outdated app file and can load the latest version. - Failed to fetch dynamically imported module: <https://fi.qially.com/assets/ForecastView-BZ5MURvZ.js> - Load latest QiFi version
