@@ -20,6 +20,7 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 - `E7` Central finance state is authoritative; successful mutations call `refreshApiState`; failed reads/writes expose `syncError` instead of substituting local financial data.
 - `E8` Old standalone QiFi Worker source/configuration and stale hostname references were removed in the 2026-07-18 architecture cleanup.
 - `E9` Current production Pages bundle loaded its active hashed Ledger and TransactionForm modules successfully after deployment.
+- `E10` `docs/finance-api-route-matrix.md` records every QiFi caller, Worker route, auth boundary, and backing table/service. The production smoke runner passed syntax validation; TypeScript and the production build passed. Its live authenticated run is correctly blocked until the four dedicated smoke identity variables are provisioned.
 
 ## Closure audit of every formerly unchecked item
 
@@ -31,7 +32,7 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 | API-02 | Confirm production uses centralized `251_QiApi` | COMPLETE_AND_VERIFIED | E1-E4 |
 | API-03 | Verify production and development Worker URLs via network | COMPLETE_BUT_NEEDS_VERIFICATION | Production verified; local development path still needs a recorded network capture. |
 | API-04 | Confirm deployed finance routes return authenticated live Supabase data | COMPLETE_BUT_NEEDS_VERIFICATION | Readiness/auth enforcement verified; authenticated state payload still needs automated proof. |
-| API-05 | Inventory every finance route, caller, table, auth, and status | ACTUALLY_INCOMPLETE | No durable route matrix exists. Phase 1. |
+| API-05 | Inventory every finance route, caller, table, auth, and status | COMPLETE_AND_VERIFIED | Durable route matrix traced against both repositories. E10 |
 | API-06 | Identify requests to old Worker | COMPLETE_AND_VERIFIED | Repository and live bundle scan found none. E1, E8 |
 | API-07 | Identify duplicated business logic in old/new Workers | COMPLETE_AND_VERIFIED | Old finance Worker removed after migration. E8 |
 | API-08 | Check old Worker deployment, DNS, variables, and calls | COMPLETE_AND_VERIFIED | Old deployment/configuration removed during architecture cleanup. E8 |
@@ -156,7 +157,7 @@ Only incomplete implementation and required verification remain here. Phases are
 
 ### Phase 1 - Production identity, API contract, and smoke-test foundation
 
-- [ ] Add a durable QiFi route/caller/table/auth matrix (`API-05`).
+- [x] Add a durable QiFi route/caller/table/auth matrix (`API-05`). Evidence: E10.
 - [ ] Add a dedicated authenticated production smoke-test identity and secure CI secrets.
 - [ ] Automate login/session acquisition without exposing credentials.
 - [ ] Assert authenticated `/api/finance/state` returns the expected schema and populated reference data.
