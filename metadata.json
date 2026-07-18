@@ -1,6 +1,8 @@
 {
   "name": "QiFi",
-  "description": "Simple, intuitive money hub for real life. Upload bank statements, automatically categorize with smart rules, and plan your future cash flow.",
+  "description": "Simple, intuitive money hub for real life. Upload statements, auto categorize with smart rules, and plan your future cash flow.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
