@@ -154,6 +154,7 @@ export interface Transaction {
   counterparty: string;
   reconciliation_id?: string | null;
   import_batch_id?: string | null;
+  raw_row_id?: string | null;
   created_at: string;
   import_status: string;
   classification_status: string;
@@ -355,6 +356,10 @@ export const qifinanceApi = {
       sourceAccountId,
       rows,
     }, 'Failed to commit transactions import');
+  },
+
+  async updateRawRow(id: string, updates: Record<string, unknown>): Promise<any> {
+    return patchJson(`/api/finance/raw-rows/${idPath(id)}`, updates, `Failed to update imported row ${id}`);
   },
 
   async createRule(rule: any): Promise<any> {

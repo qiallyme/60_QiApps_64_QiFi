@@ -879,158 +879,57 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   // Approval Engine / Ledger Posting
-  const approveRow = (rowId: string, data: { date: string; description: string; counterparty: string; accountId: string; tags: string[]; amount: number }) => {
+  const approveRow = async (rowId: string, data: { date: string; description: string; counterparty: string; accountId: string; tags: string[]; amount: number }) => {
     const row = rawRows.find(r => r.id === rowId);
     if (!row) return;
 
     const batch = importBatches.find(b => b.id === row.importBatchId);
     const sourceAccountId = batch ? batch.sourceAccountId : 'assets-checking';
-
-    const txId = `tx-${Date.now()}`;
-    const newTx: Transaction = {
-      id: txId,
-      date: data.date,
-      description: data.description,
-      rawDescription: row.description,
-      amount: data.amount,
-      sourceAccountId,
-      tags: data.tags,
-      counterparty: data.counterparty,
-      importBatchId: row.importBatchId,
-      createdAt: new Date().toISOString()
-    };
-
-    // Construct Balanced Ledger Entries
-    // For source account (Asset or Liability):
-    // If it's an asset (checking): outflow is negative, decreases asset -> Credit Checking. Inflow is positive, increases asset -> Debit Checking.
-    // If it's a liability (creditcard): outflow is negative (e.g. charge), increases liability -> Credit CC. Inflow is positive (e.g. payment/refund), decreases liability -> Debit CC.
-    const sourceAcc = accounts.find(a => a.id === sourceAccountId);
-    const isAsset = sourceAcc ? sourceAcc.type === 'asset' : true;
-
-    const absoluteAmount = Math.abs(data.amount);
-    let sourceDebit = 0;
-    let sourceCredit = 0;
-    let categoryDebit = 0;
-    let categoryCredit = 0;
-
-    if (data.amount < 0) {
-      // Outflow (spending)
-      sourceCredit = absoluteAmount; // decrease checking or increase credit card liability
-      categoryDebit = absoluteAmount; // increase category expense
-    } else {
-      // Inflow (income, payment)
-      sourceDebit = absoluteAmount; // increase checking or decrease CC liability
-      categoryCredit = absoluteAmount; // increase revenue, or decrease CC payment clearing
-    }
-
-    const newLedgers: LedgerEntry[] = [
-      {
-        id: `led-${txId}-src`,
-        transactionId: txId,
-        accountId: sourceAccountId,
-        debit: sourceDebit,
-        credit: sourceCredit,
-        date: data.date
-      },
-      {
-        id: `led-${txId}-cat`,
-        transactionId: txId,
-        accountId: data.accountId,
-        debit: categoryDebit,
-        credit: categoryCredit,
-        date: data.date
-      }
-    ];
-
-    // Update Row Status
-    const nextRawRows = rawRows.map(r => r.id === rowId ? { ...r, status: 'processed' as const } : r);
-    const nextTxs = [newTx, ...transactions];
-    const nextLedgers = [...ledgerEntries, ...newLedgers];
-
-    saveAll(accounts, nextTxs, nextLedgers, importBatches, nextRawRows, rules, attachments, statements, schedules);
-  };
-
-  const ignoreRow = (rowId: string) => {
-    const nextRawRows = rawRows.map(r => r.id === rowId ? { ...r, status: 'ignored' as const } : r);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, nextRawRows, rules, attachments, statements, schedules);
-  };
-
-  const updateRawRow = (rowId: string, updated: Partial<RawImportedRow>) => {
-    const nextRows = rawRows.map(r => r.id === rowId ? { ...r, ...updated } : r);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, nextRows, rules, attachments, statements, schedules);
-  };
-
-  const bulkApproveRows = (approvals: { rowId: string, data: { date: string; description: string; counterparty: string; accountId: string; tags: string[]; amount: number } }[]) => {
-    let nextRawRows = [...rawRows];
-    let nextTxs = [...transactions];
-    let nextLedgers = [...ledgerEntries];
-
-    approvals.forEach((app, idx) => {
-      const { rowId, data } = app;
-      const row = nextRawRows.find(r => r.id === rowId);
-      if (!row) return;
-
-      const batch = importBatches.find(b => b.id === row.importBatchId);
-      const sourceAccountId = batch ? batch.sourceAccountId : 'assets-checking';
-
-      const txId = `tx-${Date.now()}-${idx}`;
-      const newTx: Transaction = {
-        id: txId,
+    try {
+      await qifinanceApi.createTransaction({
         date: data.date,
         description: data.description,
-        rawDescription: row.description,
+        raw_description: row.description,
         amount: data.amount,
         sourceAccountId,
+        categoryAccountId: data.accountId,
         tags: data.tags,
         counterparty: data.counterparty,
-        importBatchId: row.importBatchId,
-        createdAt: new Date().toISOString()
-      };
-
-      const absoluteAmount = Math.abs(data.amount);
-      let sourceDebit = 0;
-      let sourceCredit = 0;
-      let categoryDebit = 0;
-      let categoryCredit = 0;
-
-      if (data.amount < 0) {
-        sourceCredit = absoluteAmount;
-        categoryDebit = absoluteAmount;
-      } else {
-        sourceDebit = absoluteAmount;
-        categoryCredit = absoluteAmount;
-      }
-
-      const newLedgers: LedgerEntry[] = [
-        {
-          id: `led-${txId}-src`,
-          transactionId: txId,
-          accountId: sourceAccountId,
-          debit: sourceDebit,
-          credit: sourceCredit,
-          date: data.date
-        },
-        {
-          id: `led-${txId}-cat`,
-          transactionId: txId,
-          accountId: data.accountId,
-          debit: categoryDebit,
-          credit: categoryCredit,
-          date: data.date
-        }
-      ];
-
-      nextRawRows = nextRawRows.map(r => r.id === rowId ? { ...r, status: 'processed' as const } : r);
-      nextTxs = [newTx, ...nextTxs];
-      nextLedgers = [...nextLedgers, ...newLedgers];
-    });
-
-    saveAll(accounts, nextTxs, nextLedgers, importBatches, nextRawRows, rules, attachments, statements, schedules);
+        import_batch_id: row.importBatchId,
+        raw_row_id: row.id,
+      });
+      await qifinanceApi.updateRawRow(rowId, { status: 'processed' });
+      await refreshApiState();
+    } catch (err) {
+      reportSyncError('Approve imported row', err);
+    }
   };
 
-  const bulkIgnoreRows = (rowIds: string[]) => {
-    const nextRawRows = rawRows.map(r => rowIds.includes(r.id) ? { ...r, status: 'ignored' as const } : r);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, nextRawRows, rules, attachments, statements, schedules);
+  const ignoreRow = async (rowId: string) => {
+    try {
+      await qifinanceApi.updateRawRow(rowId, { status: 'ignored' });
+      await refreshApiState();
+    } catch (err) {
+      reportSyncError('Ignore imported row', err);
+    }
+  };
+
+  const updateRawRow = async (rowId: string, updated: Partial<RawImportedRow>) => {
+    setRawRows(rows => rows.map(r => r.id === rowId ? { ...r, ...updated } : r));
+    try {
+      await qifinanceApi.updateRawRow(rowId, updated as Record<string, unknown>);
+    } catch (err) {
+      reportSyncError('Update imported row', err);
+      await refreshApiState();
+    }
+  };
+
+  const bulkApproveRows = async (approvals: { rowId: string, data: { date: string; description: string; counterparty: string; accountId: string; tags: string[]; amount: number } }[]) => {
+    for (const approval of approvals) await approveRow(approval.rowId, approval.data);
+  };
+
+  const bulkIgnoreRows = async (rowIds: string[]) => {
+    for (const rowId of rowIds) await ignoreRow(rowId);
   };
 
   // Manual Transaction Generation
@@ -1128,77 +1027,48 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       notes
     };
 
-    // Optimistic local update
-    const optimisticList = [newAttach, ...attachments];
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, optimisticList, statements, schedules);
-
     try {
-      const savedAttach = await qifinanceApi.createAttachment(newAttach);
-      // If the server returned a different ID, replace the client placeholder
-      if (savedAttach?.id && savedAttach.id !== clientId) {
-        const mapped = { ...newAttach, id: savedAttach.id };
-        const reconciled = [mapped, ...attachments];
-        saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, reconciled, statements, schedules);
-      }
-      // Full state refresh ensures anything else the server changed is reflected
+      await qifinanceApi.createAttachment(newAttach);
       await refreshApiState();
     } catch (err) {
-      console.error('[QiFi] Attachment failed to save to Supabase. Local copy preserved until refresh:', err);
-      // Local fallback is already in place from optimistic update above
+      reportSyncError('Upload attachment', err);
     }
   };
 
-  const deleteAttachment = (id: string) => {
-    qifinanceApi.deleteAttachment(id)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to delete attachment on API, using localStorage:", err));
-    const nextAttachments = attachments.filter(a => a.id !== id);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, nextAttachments, statements, schedules);
+  const deleteAttachment = async (id: string) => {
+    try { await qifinanceApi.deleteAttachment(id); await refreshApiState(); }
+    catch (err) { reportSyncError('Delete attachment', err); }
   };
 
   // -------------------------
   // Bank Reconciliation Actions
   // -------------------------
-  const addStatement = (stmt: Omit<Statement, 'id' | 'isReconciled'>) => {
+  const addStatement = async (stmt: Omit<Statement, 'id' | 'isReconciled'>) => {
     const newStmt: Statement = {
       ...stmt,
       id: `stmt-${Date.now()}`,
       isReconciled: false
     };
-    qifinanceApi.createStatement(newStmt)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to create statement on API, using localStorage:", err));
-    const nextStatements = [newStmt, ...statements];
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, nextStatements, schedules);
+    try { await qifinanceApi.createStatement(newStmt); await refreshApiState(); }
+    catch (err) { reportSyncError('Create statement', err); }
   };
 
-  const updateStatement = (updatedStmt: Statement) => {
-    qifinanceApi.updateStatement(updatedStmt.id, updatedStmt)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to update statement on API, using localStorage:", err));
-    const nextStatements = statements.map(s => s.id === updatedStmt.id ? updatedStmt : s);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, nextStatements, schedules);
+  const updateStatement = async (updatedStmt: Statement) => {
+    try { await qifinanceApi.updateStatement(updatedStmt.id, updatedStmt); await refreshApiState(); }
+    catch (err) { reportSyncError('Update statement', err); }
   };
 
-  const deleteStatement = (id: string) => {
-    qifinanceApi.deleteStatement(id)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to delete statement on API, using localStorage:", err));
-    // Unlink any transactions from this statement
-    const nextTxs = transactions.map(t => t.reconciliationId === id ? { ...t, reconciliationId: null } : t);
-    const nextStatements = statements.filter(s => s.id !== id);
-    saveAll(accounts, nextTxs, ledgerEntries, importBatches, rawRows, rules, attachments, nextStatements, schedules);
+  const deleteStatement = async (id: string) => {
+    try { await qifinanceApi.deleteStatement(id); await refreshApiState(); }
+    catch (err) { reportSyncError('Delete statement', err); }
   };
 
-  const toggleReconcileTransaction = (txId: string, stmtId: string | null) => {
-    qifinanceApi.updateTransaction(txId, { reconciliation_id: stmtId } as any)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to reconcile transaction on API, using localStorage:", err));
-    const nextTxs = transactions.map(t => t.id === txId ? { ...t, reconciliationId: stmtId } : t);
-    saveAll(accounts, nextTxs, ledgerEntries, importBatches, rawRows, rules, attachments, statements, schedules);
+  const toggleReconcileTransaction = async (txId: string, stmtId: string | null) => {
+    try { await qifinanceApi.updateTransaction(txId, { reconciliation_id: stmtId } as any); await refreshApiState(); }
+    catch (err) { reportSyncError('Reconcile transaction', err); }
   };
 
-  const setStatementReconciled = (stmtId: string, reconciled: boolean) => {
+  const setStatementReconciled = async (stmtId: string, reconciled: boolean) => {
     const nextStatements = statements.map(s => s.id === stmtId ? { 
       ...s, 
       isReconciled: reconciled,
@@ -1206,11 +1076,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     } : s);
     const updated = nextStatements.find(s => s.id === stmtId);
     if (updated) {
-      qifinanceApi.updateStatement(stmtId, updated)
-        .then(refreshApiState)
-        .catch((err) => console.warn("Failed to update statement reconciliation on API, using localStorage:", err));
+      try { await qifinanceApi.updateStatement(stmtId, updated); await refreshApiState(); }
+      catch (err) { reportSyncError('Reconcile statement', err); }
     }
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, nextStatements, schedules);
   };
 
   // -------------------------
@@ -1263,53 +1131,38 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     return newCP;
   };
 
-  const updateCounterparty = (updatedCP: Counterparty) => {
-    qifinanceApi.updateCounterparty(updatedCP.id, updatedCP)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to update counterparty on API, using localStorage:", err));
-    const nextCPs = counterparties.map(cp => cp.id === updatedCP.id ? updatedCP : cp);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, schedules, nextCPs, obligations);
+  const updateCounterparty = async (updatedCP: Counterparty) => {
+    try { await qifinanceApi.updateCounterparty(updatedCP.id, updatedCP); await refreshApiState(); }
+    catch (err) { reportSyncError('Update counterparty', err); }
   };
 
-  const deleteCounterparty = (id: string) => {
-    qifinanceApi.deleteCounterparty(id)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to delete counterparty on API, using localStorage:", err));
-    const nextCPs = counterparties.filter(cp => cp.id !== id);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, schedules, nextCPs, obligations);
+  const deleteCounterparty = async (id: string) => {
+    try { await qifinanceApi.deleteCounterparty(id); await refreshApiState(); }
+    catch (err) { reportSyncError('Delete counterparty', err); }
   };
 
   // -------------------------
   // Obligation Actions
   // -------------------------
-  const addObligation = (ob: Omit<AccountabilityObligation, 'id' | 'createdAt' | 'workspaceId'> & { id?: string }) => {
+  const addObligation = async (ob: Omit<AccountabilityObligation, 'id' | 'createdAt' | 'workspaceId'> & { id?: string }) => {
     const newOb: AccountabilityObligation = {
       ...ob,
       id: ob.id || `obl-${Date.now()}`,
       workspaceId: 'default',
       createdAt: new Date().toISOString()
     };
-    qifinanceApi.createObligation(newOb)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to create obligation on API, using localStorage:", err));
-    const nextObs = [...obligations, newOb];
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, schedules, counterparties, nextObs);
+    try { await qifinanceApi.createObligation(newOb); await refreshApiState(); }
+    catch (err) { reportSyncError('Create obligation', err); }
   };
 
-  const updateObligation = (updatedOb: AccountabilityObligation) => {
-    qifinanceApi.updateObligation(updatedOb.id, updatedOb)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to update obligation on API, using localStorage:", err));
-    const nextObs = obligations.map(ob => ob.id === updatedOb.id ? updatedOb : ob);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, schedules, counterparties, nextObs);
+  const updateObligation = async (updatedOb: AccountabilityObligation) => {
+    try { await qifinanceApi.updateObligation(updatedOb.id, updatedOb); await refreshApiState(); }
+    catch (err) { reportSyncError('Update obligation', err); }
   };
 
-  const deleteObligation = (id: string) => {
-    qifinanceApi.deleteObligation(id)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to delete obligation on API, using localStorage:", err));
-    const nextObs = obligations.filter(ob => ob.id !== id);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, schedules, counterparties, nextObs);
+  const deleteObligation = async (id: string) => {
+    try { await qifinanceApi.deleteObligation(id); await refreshApiState(); }
+    catch (err) { reportSyncError('Delete obligation', err); }
   };
 
   // -------------------------
