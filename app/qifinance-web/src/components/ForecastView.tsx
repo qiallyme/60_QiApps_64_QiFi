@@ -51,7 +51,11 @@ export default function ForecastView() {
     financialAccounts,
     transactions,
     rawRows,
-    obligations
+    obligations,
+    isLoading,
+    syncError,
+    lastUpdatedAt,
+    refreshData
   } = useQiStore();
   const [forecastAccountId, setForecastAccountId] = useState(() => financialAccounts[0]?.id || '');
 
@@ -66,6 +70,7 @@ export default function ForecastView() {
   const [qTxDate, setQTxDate] = useState(new Date().toISOString().split('T')[0]);
   const [qTxDesc, setQTxDesc] = useState('');
   const [qTxAmount, setQTxAmount] = useState('');
+  const [qTxDirection, setQTxDirection] = useState<'out' | 'in'>('out');
   const [qTxSourceAcc, setQTxSourceAcc] = useState('');
   const [qTxCatAcc, setQTxCatAcc] = useState('suspense-uncategorized');
   const [qTxCounterparty, setQTxCounterparty] = useState('');
@@ -142,7 +147,7 @@ export default function ForecastView() {
       date: qTxDate,
       description: qTxDesc,
       rawDescription: qTxDesc,
-      amount: Number(qTxAmount),
+      amount: qTxDirection === 'out' ? -Math.abs(Number(qTxAmount)) : Math.abs(Number(qTxAmount)),
       sourceAccountId: qTxSourceAcc,
       tags: qTxTagsText.split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
       counterparty: qTxCounterparty
@@ -546,6 +551,15 @@ export default function ForecastView() {
 
   return (
     <div className="space-y-6">
+      {syncError && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">
+          <div><strong>Live data unavailable.</strong> {syncError}</div>
+          <button type="button" onClick={() => void refreshData()} className="rounded-xl bg-rose-500/20 px-4 py-2 font-bold hover:bg-rose-500/30">Retry</button>
+        </div>
+      )}
+      {isLoading && (
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 text-sm text-zinc-400">Loading live financial data…</div>
+      )}
       
       {/* VITAL POSITIONING */}
       <div className="bg-zinc-900/40 text-zinc-100 p-5 rounded-2xl border border-zinc-800/80 shadow-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 backdrop-blur-sm">
@@ -586,7 +600,7 @@ export default function ForecastView() {
                 ? `${Number(metric.value) < 0 ? '-' : ''}$${Math.abs(Number(metric.value)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                 : metric.value}
             </div>
-            <div className="mt-1 text-[9px] text-zinc-600">Live from the selected account</div>
+            <div className="mt-1 text-[9px] text-zinc-600">{lastUpdatedAt ? `Updated ${new Date(lastUpdatedAt).toLocaleTimeString()}` : 'Live from the selected account'}</div>
           </div>
         ))}
       </div>
@@ -674,14 +688,18 @@ export default function ForecastView() {
               <button type="button" onClick={() => setQuickModal(null)} className="text-zinc-500 hover:text-white"><X size={16} /></button>
             </div>
             
-            <div className="grid grid-cols-2 gap-3.5">
+            <div className="grid grid-cols-3 gap-3.5">
               <div>
                 <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Date</label>
                 <input type="date" value={qTxDate} onChange={e => setQTxDate(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-700" required />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Amount (Negative = Expense)</label>
-                <input type="number" step="0.01" placeholder="e.g. -24.50 or 1500" value={qTxAmount} onChange={e => setQTxAmount(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-700" required />
+                <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Direction</label>
+                <select value={qTxDirection} onChange={e => setQTxDirection(e.target.value as 'out' | 'in')} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100"><option value="out">Money Out</option><option value="in">Money In</option></select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Amount</label>
+                <input type="number" min="0" step="0.01" placeholder="24.50" value={qTxAmount} onChange={e => setQTxAmount(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-700" required />
               </div>
             </div>
 

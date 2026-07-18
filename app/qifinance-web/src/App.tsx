@@ -11,6 +11,8 @@ function isJwt(token: string): boolean {
 }
 
 class WorkspaceErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  declare props: Readonly<{ children: React.ReactNode }>;
+  declare setState: React.Component<{ children: React.ReactNode }, { error: Error | null }>['setState'];
   state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) { return { error }; }
   componentDidCatch(error: Error, info: React.ErrorInfo) { console.error('[QiFi UI crash]', error, info); }

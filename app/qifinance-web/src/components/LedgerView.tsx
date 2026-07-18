@@ -126,6 +126,7 @@ export default function LedgerView() {
     }
     return '';
   });
+  const [manualDirection, setManualDirection] = useState<'out' | 'in'>('out');
 
   const [manualSourceAcc, setManualSourceAcc] = useState(() => {
     const draft = localStorage.getItem('qifi_draft_ledger');
@@ -446,7 +447,7 @@ export default function LedgerView() {
       return;
     }
 
-    const amount = Number(manualAmount);
+    const amount = manualDirection === 'out' ? -Math.abs(Number(manualAmount)) : Math.abs(Number(manualAmount));
     const tags = manualTagsText.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
     setPostingError('');
@@ -540,7 +541,7 @@ export default function LedgerView() {
             <DollarSign className="text-emerald-400" size={18} />
             {editingTxId ? 'Edit Balanced Ledger Entry' : 'Post New Double-Entry Balanced Entry'}
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {/* Date */}
             <div>
               <label className="block text-xs font-semibold text-zinc-400 mb-1">Date</label>
@@ -552,13 +553,20 @@ export default function LedgerView() {
                 required
               />
             </div>
+            <div>
+              <label className="block text-xs font-semibold text-zinc-400 mb-1">Direction</label>
+              <select value={manualDirection} onChange={e => setManualDirection(e.target.value as 'out' | 'in')} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100">
+                <option value="out">Money Out / Expense</option>
+                <option value="in">Money In / Income</option>
+              </select>
+            </div>
             {/* Amount */}
             <div>
-              <label className="block text-xs font-semibold text-zinc-400 mb-1">Amount (Negative = Expense, Positive = Income)</label>
+              <label className="block text-xs font-semibold text-zinc-400 mb-1">Amount</label>
               <input 
                 type="number" 
                 step="0.01"
-                placeholder="-50.00 or 1500.00"
+                placeholder="50.00"
                 value={manualAmount} 
                 onChange={e => setManualAmount(e.target.value)}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25 placeholder:text-zinc-600"
@@ -1102,7 +1110,8 @@ export default function LedgerView() {
                               onClick={() => {
                                 setEditingTxId(tx.id);
                                 setManualDate(tx.date);
-                                setManualAmount(String(tx.amount));
+                                setManualDirection(tx.amount < 0 ? 'out' : 'in');
+                                setManualAmount(String(Math.abs(tx.amount)));
                                 setManualCounterparty(tx.counterparty || '');
                                 setManualDesc(tx.description);
                                 setManualTagsText(tx.tags.join(', '));

@@ -1,4 +1,0 @@
-SUPABASE_URL="https://emnskvvajdlqixwzjfsm.supabase.co"
-SUPABASE_SERVICE_ROLE_KEY="replace-with-local-dev-service-role-key"
-QIFI_API_TOKEN="replace-with-private-qifi-access-key"
-OPENAI_API_KEY="replace-with-openai-api-key"

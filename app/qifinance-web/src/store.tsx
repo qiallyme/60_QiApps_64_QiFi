@@ -29,6 +29,9 @@ interface QiContextType {
   // Balance Helpers
   getAccountBalance: (accountId: string) => number;
   refreshData: () => Promise<void>;
+  isLoading: boolean;
+  syncError: string | null;
+  lastUpdatedAt: string | null;
   
   // Actions
   addAccount: (account: Omit<Account, 'isActive'>) => void;
@@ -369,6 +372,14 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [schedules, setSchedules] = useState<RecurringSchedule[]>([]);
   const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
   const [obligations, setObligations] = useState<AccountabilityObligation[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const reportSyncError = (action: string, error: unknown) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    setSyncError(`${action} failed. Nothing was saved locally as a substitute. ${detail}`);
+    console.error(`[QiFi] ${action} failed:`, error);
+  };
 
   const applyApiState = (apiState: any) => {
     const mappedTxs = (apiState.transactions || []).map(mapApiTransaction);
@@ -390,79 +401,34 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   const refreshApiState = async () => {
-    const apiState = await qifinanceApi.getState();
-    applyApiState(apiState);
+    setSyncError(null);
+    try {
+      const apiState = await qifinanceApi.getState();
+      applyApiState(apiState);
+      setLastUpdatedAt(new Date().toISOString());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to refresh finance data.';
+      setSyncError(message);
+      throw error;
+    }
   };
 
-  // Load from API or fallback to localStorage
+  // Supabase through 251_QiApi is authoritative. Browser storage is never a data fallback.
   useEffect(() => {
     const loadApiData = async () => {
+      setIsLoading(true);
       try {
         await qifinanceApi.checkHealth();
-        try {
-          const apiState = await qifinanceApi.getState();
-          if (!apiState.accounts || apiState.accounts.length === 0) throw new Error("No accounts found in database");
-          applyApiState(apiState);
-        } catch (stateErr) {
-          if (stateErr instanceof QiFinanceAuthError) throw stateErr;
-          console.warn("Full finance state endpoint unavailable, loading core API data:", stateErr);
-          const [apiAccounts, apiTransactions] = await Promise.all([
-            qifinanceApi.getAccounts(),
-            qifinanceApi.getTransactions(),
-          ]);
-          if (!apiAccounts || apiAccounts.length === 0) throw new Error("No accounts found in database");
-
-          const mappedTxs = apiTransactions.map(mapApiTransaction);
-          setFinancialAccounts([]);
-          setAccounts(apiAccounts.map(mapApiAccount));
-          setTransactions(mappedTxs);
-          setLedgerEntries(buildLedgerEntriesFromTransactions(mappedTxs));
-
-          setImportBatches(localStorage.getItem('qi_batches') ? JSON.parse(localStorage.getItem('qi_batches') || '[]') : []);
-          setRawRows(localStorage.getItem('qi_raw_rows') ? JSON.parse(localStorage.getItem('qi_raw_rows') || '[]') : []);
-          setRules(localStorage.getItem('qi_rules') ? JSON.parse(localStorage.getItem('qi_rules') || '[]') : DEFAULT_RULES);
-          setAttachments(localStorage.getItem('qi_attachments') ? JSON.parse(localStorage.getItem('qi_attachments') || '[]') : []);
-          setStatements(localStorage.getItem('qi_statements') ? JSON.parse(localStorage.getItem('qi_statements') || '[]') : []);
-          setSchedules(localStorage.getItem('qi_schedules') ? JSON.parse(localStorage.getItem('qi_schedules') || '[]') : []);
-          setCounterparties(localStorage.getItem('qi_counterparties') ? JSON.parse(localStorage.getItem('qi_counterparties') || '[]') : []);
-          setObligations(localStorage.getItem('qi_obligations') ? JSON.parse(localStorage.getItem('qi_obligations') || '[]') : []);
-        }
+        await refreshApiState();
       } catch (err) {
         if (err instanceof QiFinanceAuthError) {
           qifinanceApi.clearAuthToken();
           window.location.reload();
           return;
         }
-        console.warn("Could not load from API worker, falling back to localStorage:", err);
-        const savedFinancialAccounts = localStorage.getItem('qi_financial_accounts');
-        const savedAccounts = localStorage.getItem('qi_accounts');
-        const savedTransactions = localStorage.getItem('qi_transactions');
-        const savedLedgers = localStorage.getItem('qi_ledgers');
-        const savedBatches = localStorage.getItem('qi_batches');
-        const savedRawRows = localStorage.getItem('qi_raw_rows');
-        const savedRules = localStorage.getItem('qi_rules');
-        const savedAttachments = localStorage.getItem('qi_attachments');
-        const savedStatements = localStorage.getItem('qi_statements');
-        const savedSchedules = localStorage.getItem('qi_schedules');
-        const savedCounterparties = localStorage.getItem('qi_counterparties');
-        const savedObligations = localStorage.getItem('qi_obligations');
-
-        if (savedAccounts) {
-          setFinancialAccounts(savedFinancialAccounts ? JSON.parse(savedFinancialAccounts) : []);
-          setAccounts(JSON.parse(savedAccounts));
-          setTransactions(savedTransactions ? JSON.parse(savedTransactions) : []);
-          setLedgerEntries(savedLedgers ? JSON.parse(savedLedgers) : []);
-          setImportBatches(savedBatches ? JSON.parse(savedBatches) : []);
-          setRawRows(savedRawRows ? JSON.parse(savedRawRows) : []);
-          setRules(savedRules ? JSON.parse(savedRules) : []);
-          setAttachments(savedAttachments ? JSON.parse(savedAttachments) : []);
-          setStatements(savedStatements ? JSON.parse(savedStatements) : []);
-          setSchedules(savedSchedules ? JSON.parse(savedSchedules) : []);
-          setCounterparties(savedCounterparties ? JSON.parse(savedCounterparties) : []);
-          setObligations(savedObligations ? JSON.parse(savedObligations) : []);
-        } else {
-          seedDefaultData();
-        }
+        setSyncError(err instanceof Error ? err.message : 'QiFi could not load live finance data.');
+      } finally {
+        setIsLoading(false);
       }
     };
     loadApiData();
@@ -794,11 +760,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return;
     } catch (err) {
-      console.warn("Failed to create account on API, using localStorage:", err);
+      reportSyncError('Create account', err);
+      return;
     }
-    const newAcc: Account = { ...acc, isActive: true };
-    const nextAccs = [...accounts, newAcc];
-    saveAll(nextAccs, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, schedules);
   };
 
   const updateAccount = async (updatedAcc: Account) => {
@@ -817,10 +781,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return;
     } catch (err) {
-      console.warn("Failed to update account on API, using localStorage:", err);
+      reportSyncError('Update account', err);
+      return;
     }
-    const nextAccs = accounts.map(a => a.id === updatedAcc.id ? updatedAcc : a);
-    saveAll(nextAccs, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, schedules);
   };
 
   const deleteAccount = async (id: string) => {
@@ -829,17 +792,8 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return;
     } catch (err) {
-      console.warn("Failed to delete account on API, using localStorage:", err);
-    }
-    // Delete account only if no ledger entries use it to avoid orphans, or allow soft inactivation
-    const isUsed = ledgerEntries.some(le => le.accountId === id);
-    if (isUsed) {
-      // Soft disable instead of delete
-      const nextAccs = accounts.map(a => a.id === id ? { ...a, isActive: false } : a);
-      saveAll(nextAccs, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, schedules);
-    } else {
-      const nextAccs = accounts.filter(a => a.id !== id);
-      saveAll(nextAccs, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, schedules);
+      reportSyncError('Delete account', err);
+      return;
     }
   };
 
@@ -856,10 +810,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return;
     } catch (err) {
-      console.warn("Failed to create rule on API, using localStorage:", err);
+      reportSyncError('Create classification rule', err);
+      return;
     }
-    const nextRules = [...rules, newRule];
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, nextRules, attachments, statements, schedules);
   };
 
   const updateRule = async (updatedRule: Rule) => {
@@ -868,10 +821,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return;
     } catch (err) {
-      console.warn("Failed to update rule on API, using localStorage:", err);
+      reportSyncError('Update classification rule', err);
+      return;
     }
-    const nextRules = rules.map(r => r.id === updatedRule.id ? updatedRule : r);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, nextRules, attachments, statements, schedules);
   };
 
   const deleteRule = async (id: string) => {
@@ -880,10 +832,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return;
     } catch (err) {
-      console.warn("Failed to delete rule on API, using localStorage:", err);
+      reportSyncError('Delete classification rule', err);
+      return;
     }
-    const nextRules = rules.filter(r => r.id !== id);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, nextRules, attachments, statements, schedules);
   };
 
   // -------------------------
@@ -902,25 +853,6 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       memo?: string;
     }[]
   ) => {
-    const localBatchId = `batch-${Date.now()}`;
-    const buildLocalRawRows = (batchId: string, status: RawImportedRow['status']): RawImportedRow[] => rows.map((r, i) => {
-      const descLower = r.description.toLowerCase();
-      let matchedRule = rules.find(rule => descLower.includes(rule.pattern.toLowerCase()));
-
-      return {
-        id: `raw-${batchId}-${i}`,
-        importBatchId: batchId,
-        date: r.date,
-        description: r.description,
-        amount: r.amount,
-        status,
-        suggestedAccountId: r.accountId || (matchedRule ? matchedRule.suggestedAccountId : 'suspense-uncategorized'),
-        suggestedTags: r.tags && r.tags.length > 0 ? r.tags : (matchedRule ? matchedRule.suggestedTags : []),
-        suggestedCounterparty: r.counterparty || (matchedRule ? matchedRule.suggestedCounterparty : ''),
-        memo: r.memo || ''
-      };
-    });
-
     try {
       const apiRows = rows.map((r, idx) => ({
         index: idx,
@@ -941,23 +873,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return;
     } catch (err) {
-      console.warn("Failed to commit import via API, using local fallback:", err);
+      reportSyncError('Import transactions', err);
+      return;
     }
-
-    const newBatch: ImportBatch = {
-      id: localBatchId,
-      createdAt: new Date().toISOString(),
-      fileName,
-      rawCount: rows.length,
-      sourceAccountId
-    };
-
-    const newRawRows = buildLocalRawRows(localBatchId, 'pending');
-
-    const nextBatches = [newBatch, ...importBatches];
-    const nextRawRows = [...newRawRows, ...rawRows];
-
-    saveAll(accounts, transactions, ledgerEntries, nextBatches, nextRawRows, rules, attachments, statements, schedules);
   };
 
   // Approval Engine / Ledger Posting
@@ -1138,7 +1056,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return mapApiTransaction(apiTx);
     } catch (err) {
-      console.error("Failed to create transaction on API:", err);
+      reportSyncError('Create transaction', err);
       return null;
     }
   };
@@ -1149,7 +1067,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return;
     } catch (err) {
-      console.error("Failed to delete transaction in Supabase; local state was not changed:", err);
+      reportSyncError('Delete transaction', err);
       return;
     }
   };
@@ -1174,7 +1092,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await refreshApiState();
       return;
     } catch (err) {
-      console.error("Failed to update transaction in Supabase; local state was not changed:", err);
+      reportSyncError('Update transaction', err);
       return;
     }
   };
@@ -1298,33 +1216,36 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // -------------------------
   // Schedules / Forecast
   // -------------------------
-  const addSchedule = (sched: Omit<RecurringSchedule, 'id' | 'isActive'>) => {
+  const addSchedule = async (sched: Omit<RecurringSchedule, 'id' | 'isActive'>) => {
     const newSched: RecurringSchedule = {
       ...sched,
       id: `sched-${Date.now()}`,
       isActive: true
     };
-    qifinanceApi.createSchedule(newSched)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to create schedule on API, using localStorage:", err));
-    const nextScheds = [...schedules, newSched];
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, nextScheds);
+    try {
+      await qifinanceApi.createSchedule(newSched);
+      await refreshApiState();
+    } catch (error) {
+      reportSyncError('Create recurring schedule', error);
+    }
   };
 
-  const updateSchedule = (updatedSched: RecurringSchedule) => {
-    qifinanceApi.updateSchedule(updatedSched.id, updatedSched)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to update schedule on API, using localStorage:", err));
-    const nextScheds = schedules.map(s => s.id === updatedSched.id ? updatedSched : s);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, nextScheds);
+  const updateSchedule = async (updatedSched: RecurringSchedule) => {
+    try {
+      await qifinanceApi.updateSchedule(updatedSched.id, updatedSched);
+      await refreshApiState();
+    } catch (error) {
+      reportSyncError('Update recurring schedule', error);
+    }
   };
 
-  const deleteSchedule = (id: string) => {
-    qifinanceApi.deleteSchedule(id)
-      .then(refreshApiState)
-      .catch((err) => console.warn("Failed to delete schedule on API, using localStorage:", err));
-    const nextScheds = schedules.filter(s => s.id !== id);
-    saveAll(accounts, transactions, ledgerEntries, importBatches, rawRows, rules, attachments, statements, nextScheds);
+  const deleteSchedule = async (id: string) => {
+    try {
+      await qifinanceApi.deleteSchedule(id);
+      await refreshApiState();
+    } catch (error) {
+      reportSyncError('Delete recurring schedule', error);
+    }
   };
 
   // -------------------------
@@ -1477,6 +1398,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       obligations,
       getAccountBalance,
       refreshData: refreshApiState,
+      isLoading,
+      syncError,
+      lastUpdatedAt,
       addAccount,
       updateAccount,
       deleteAccount,

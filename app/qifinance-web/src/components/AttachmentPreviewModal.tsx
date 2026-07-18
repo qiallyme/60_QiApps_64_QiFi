@@ -81,6 +81,7 @@ export default function AttachmentPreviewModal({ attachment, onClose, titlePrefi
 
   if (!attachment) return null;
 
+  const fileType = attachment.fileType || 'application/octet-stream';
   const isImage = fileType.startsWith('image/') || (dynamicUrl && dynamicUrl.includes('images.unsplash.com')) || false;
   const isPdf = fileType === 'application/pdf' || hasExtension(attachment.fileName, ['.pdf']);
   const isOfficeDoc = hasExtension(attachment.fileName, ['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']);
