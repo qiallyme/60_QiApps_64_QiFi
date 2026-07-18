@@ -572,8 +572,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
             <label className="block space-y-2">
               <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Email Address</span>
               <input
-                autoFocus
+                id="qifi-email"
+                name="email"
                 type="email"
+                autoComplete="email"
                 placeholder="your@email.com"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -615,7 +617,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
             <label className="block space-y-2">
               <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Passphrase</span>
               <input
-                autoFocus
+                id="qifi-passphrase"
+                name="passphrase"
                 type="password"
                 placeholder="Legacy access key"
                 value={passphrase}

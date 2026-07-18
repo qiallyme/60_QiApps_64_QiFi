@@ -12,19 +12,19 @@
   "categories": ["finance", "productivity"],
   "icons": [
     {
-      "src": "/qifi-icon-192.png",
+      "src": "/icons/qifi-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/qifi-icon-512.png",
+      "src": "/icons/qifi-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/qifi-maskable-512.png",
+      "src": "/icons/qifi-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

@@ -56,7 +56,19 @@ async function requestJson<T>(path: string, fallback: string, init?: RequestInit
     headers: await authHeaders(init),
   });
   if (!res.ok) throw await apiError(res, fallback);
-  return res.json() as Promise<T>;
+  const payload: unknown = await res.json();
+  // 251_QiApi uses a standard success envelope. Keep the client tolerant of
+  // unwrapped health/dev responses, but never leak the envelope into callers.
+  if (
+    payload !== null &&
+    typeof payload === 'object' &&
+    'ok' in payload &&
+    (payload as { ok?: unknown }).ok === true &&
+    'data' in payload
+  ) {
+    return (payload as { data: T }).data;
+  }
+  return payload as T;
 }
 
 async function postJson<T>(path: string, body: unknown, fallback: string, init?: RequestInit): Promise<T> {

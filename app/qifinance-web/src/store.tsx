@@ -383,7 +383,9 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   const applyApiState = (apiState: any) => {
     const mappedTxs = (apiState.transactions || []).map(mapApiTransaction);
-    const mappedLedgerEntries = (apiState.journalLines || apiState.ledgerEntries || []).map(mapApiLedgerEntry);
+    // Prefer the API's enriched projection: it carries transaction_id, which
+    // raw journal lines do not, so related-record and report joins stay valid.
+    const mappedLedgerEntries = (apiState.ledgerEntries || apiState.journalLines || []).map(mapApiLedgerEntry);
     const mappedLedgerAccounts = (apiState.ledgerAccounts || apiState.accounts || []).map(mapApiAccount);
 
     setFinancialAccounts((apiState.financialAccounts || []).map(mapApiFinancialAccount));
