@@ -108,6 +108,43 @@ export interface Attachment {
   dataUrl: string; // Base64 image/file data
   uploadedAt: string;
   notes: string;
+  bucketName?: string | null;
+  objectPath?: string | null;
+  fileSize?: number | null;
+  rawOcrText?: string | null;
+  parsedOcrJson?: ReceiptExtraction | null;
+  processingStatus?: 'pending' | 'processing' | 'completed' | 'failed' | null;
+}
+
+export interface ExtractedField<T> {
+  value: T;
+  confidence: number;
+  sourceText?: string;
+}
+
+export interface ReceiptLineItem {
+  description: string;
+  quantity?: number;
+  unitPrice?: number;
+  total?: number;
+}
+
+export interface ReceiptExtraction {
+  merchantName?: ExtractedField<string>;
+  transactionDate?: ExtractedField<string>;
+  transactionTime?: ExtractedField<string>;
+  subtotal?: ExtractedField<number>;
+  tax?: ExtractedField<number>;
+  tip?: ExtractedField<number>;
+  discount?: ExtractedField<number>;
+  total?: ExtractedField<number>;
+  currency?: ExtractedField<string>;
+  paymentMethodLast4?: ExtractedField<string>;
+  categoryId?: ExtractedField<string>;
+  financialAccountId?: ExtractedField<string>;
+  location?: ExtractedField<string>;
+  receiptNumber?: ExtractedField<string>;
+  lineItems?: ReceiptLineItem[];
 }
 
 export interface Statement {

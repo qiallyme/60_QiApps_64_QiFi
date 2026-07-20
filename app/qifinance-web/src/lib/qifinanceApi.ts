@@ -204,6 +204,14 @@ export interface ImportPreviewResponse {
   missingCounterparties: string[];
 }
 
+export interface ReceiptProcessingResponse {
+  attachmentId: string;
+  processingStatus: 'pending' | 'processing' | 'completed' | 'failed';
+  rawOcrText?: string | null;
+  parsedOcrJson?: import('../types').ReceiptExtraction | null;
+  error?: string | null;
+}
+
 export interface FinanceState {
   financialAccounts: any[];
   ledgerAccounts: any[];
@@ -393,6 +401,14 @@ export const qifinanceApi = {
 
   async getAttachmentUrl(id: string): Promise<{ url: string, type: 'signed_url' | 'data_url' }> {
     return requestJson(`/api/finance/attachments/${idPath(id)}/url`, `Failed to fetch attachment url ${id}`);
+  },
+
+  async processReceipt(id: string): Promise<ReceiptProcessingResponse> {
+    return postJson(`/api/finance/attachments/${idPath(id)}/process-receipt`, {}, `Failed to process receipt ${id}`);
+  },
+
+  async getReceiptProcessing(id: string): Promise<ReceiptProcessingResponse> {
+    return requestJson(`/api/finance/attachments/${idPath(id)}/receipt-processing`, `Failed to fetch receipt processing ${id}`);
   },
 
   async deleteAttachment(id: string): Promise<any> {

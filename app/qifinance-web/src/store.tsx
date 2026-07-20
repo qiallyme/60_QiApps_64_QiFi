@@ -226,7 +226,13 @@ function mapApiAttachment(attachment: any): Attachment {
     fileType: attachment.file_type,
     dataUrl: attachment.data_url,
     uploadedAt: attachment.uploaded_at,
-    notes: attachment.notes || ''
+    notes: attachment.notes || '',
+    bucketName: attachment.bucket_name || null,
+    objectPath: attachment.object_path || null,
+    fileSize: attachment.file_size == null ? null : Number(attachment.file_size),
+    rawOcrText: attachment.raw_ocr_text || null,
+    parsedOcrJson: attachment.parsed_ocr_json || null,
+    processingStatus: attachment.processing_status || null
   };
 }
 

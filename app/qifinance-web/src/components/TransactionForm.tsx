@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { DollarSign, Eye, Paperclip, Trash2, Upload } from 'lucide-react';
+import { Camera, DollarSign, Eye, Loader2, Paperclip, ReceiptText, Trash2, Upload } from 'lucide-react';
 import { useQiStore } from '../store';
-import { Attachment, Transaction } from '../types';
+import { Attachment, ReceiptExtraction, Transaction } from '../types';
+import { qifinanceApi } from '../lib/qifinanceApi';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
 import SearchableAccountSelect from './SearchableAccountSelect';
 
@@ -17,7 +18,12 @@ interface PendingAttachment {
   fileName: string;
   fileType: string;
   dataUrl: string;
+  kind: 'receipt' | 'evidence';
 }
+
+type UnifiedAttachmentItem =
+  | { status: 'saved'; attachment: Attachment }
+  | { status: 'pending'; attachment: PendingAttachment };
 
 const today = () => new Date().toISOString().split('T')[0];
 
@@ -33,18 +39,39 @@ export default function TransactionForm({ transaction, categoryAccountId, onCanc
   const [amount, setAmount] = useState(transaction ? String(Math.abs(transaction.amount)) : '');
   const [description, setDescription] = useState(transaction?.description || '');
   const [sourceAccountId, setSourceAccountId] = useState(transaction?.sourceAccountId || financialAccounts[0]?.id || '');
-  const [categoryId, setCategoryId] = useState(categoryAccountId || 'suspense-uncategorized');
+  const [categoryId, setCategoryId] = useState(transaction?.categoryId || categoryAccountId || 'suspense-uncategorized');
   const [counterparty, setCounterparty] = useState(transaction?.counterparty || '');
   const [newCounterpartyName, setNewCounterpartyName] = useState('');
   const [tagsText, setTagsText] = useState(transaction?.tags.join(', ') || '');
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingAttachmentId, setDeletingAttachmentId] = useState<string | null>(null);
+  const [processingAttachmentId, setProcessingAttachmentId] = useState<string | null>(null);
+  const [receiptProposal, setReceiptProposal] = useState<ReceiptExtraction | null>(null);
+  const [receiptProposalApplied, setReceiptProposalApplied] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!sourceAccountId && financialAccounts[0]) setSourceAccountId(financialAccounts[0].id);
   }, [financialAccounts, sourceAccountId]);
+
+  useEffect(() => {
+    setDate(transaction?.date || today());
+    setDirection((transaction?.amount || 0) < 0 ? 'out' : 'in');
+    setAmount(transaction ? String(Math.abs(transaction.amount)) : '');
+    setDescription(transaction?.description || '');
+    setSourceAccountId(transaction?.sourceAccountId || financialAccounts[0]?.id || '');
+    setCategoryId(transaction?.categoryId || categoryAccountId || 'suspense-uncategorized');
+    setCounterparty(transaction?.counterparty || '');
+    setNewCounterpartyName('');
+    setTagsText(transaction?.tags.join(', ') || '');
+    setPendingAttachments([]);
+    setPreviewAttachment(null);
+    setReceiptProposal(null);
+    setReceiptProposalApplied(false);
+    setError('');
+  }, [transaction?.id, categoryAccountId]);
 
   const savedAttachments = useMemo(
     () => transaction ? attachments.filter((attachment) => attachment.transactionId === transaction.id) : [],
@@ -54,18 +81,67 @@ export default function TransactionForm({ transaction, categoryAccountId, onCanc
     () => accounts.filter((account) => !['asset', 'liability'].includes(account.type) || account.id === 'assets-loans-mom'),
     [accounts],
   );
+  const attachmentItems = useMemo<UnifiedAttachmentItem[]>(() => [
+    ...savedAttachments.map((attachment) => ({ status: 'saved' as const, attachment })),
+    ...pendingAttachments.map((attachment) => ({ status: 'pending' as const, attachment })),
+  ], [savedAttachments, pendingAttachments]);
 
-  const handleFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFiles = (event: React.ChangeEvent<HTMLInputElement>, forcedKind?: PendingAttachment['kind']) => {
     const files = event.currentTarget.files;
     if (!files) return;
     Array.from(files).forEach((file: File) => {
       const reader = new FileReader();
       reader.onload = () => setPendingAttachments((current) => [...current, {
         id: crypto.randomUUID(), fileName: file.name, fileType: file.type || 'application/octet-stream', dataUrl: String(reader.result),
+        kind: forcedKind || (file.type.startsWith('image/') || file.type === 'application/pdf' ? 'receipt' : 'evidence'),
       }]);
       reader.readAsDataURL(file);
     });
     event.target.value = '';
+  };
+
+  const handleDeleteSavedAttachment = async (attachmentId: string) => {
+    if (deletingAttachmentId) return;
+    setDeletingAttachmentId(attachmentId);
+    setError('');
+    try {
+      await deleteAttachment(attachmentId);
+      if (previewAttachment?.id === attachmentId) setPreviewAttachment(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Attachment deletion failed.');
+    } finally {
+      setDeletingAttachmentId(null);
+    }
+  };
+
+  const handleProcessReceipt = async (attachment: Attachment) => {
+    if (processingAttachmentId) return;
+    setProcessingAttachmentId(attachment.id);
+    setError('');
+    try {
+      const result = await qifinanceApi.processReceipt(attachment.id);
+      if (!result.parsedOcrJson) throw new Error('Receipt processing completed without extracted fields.');
+      setReceiptProposal(result.parsedOcrJson);
+      setReceiptProposalApplied(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Receipt processing failed. You can retry.');
+    } finally {
+      setProcessingAttachmentId(null);
+    }
+  };
+
+  const applyReceiptProposal = () => {
+    if (!receiptProposal) return;
+    if (receiptProposal.merchantName?.value) {
+      const merchant = receiptProposal.merchantName.value;
+      if (counterparties.some((item) => item.name.toLowerCase() === merchant.toLowerCase())) setCounterparty(merchant);
+      else { setCounterparty('__new__'); setNewCounterpartyName(merchant); }
+    }
+    if (receiptProposal.transactionDate?.value) setDate(receiptProposal.transactionDate.value);
+    if (receiptProposal.total?.value && receiptProposal.total.value > 0) setAmount(String(receiptProposal.total.value));
+    if (receiptProposal.categoryId?.value && accounts.some((account) => account.id === receiptProposal.categoryId?.value)) setCategoryId(receiptProposal.categoryId.value);
+    if (receiptProposal.financialAccountId?.value && financialAccounts.some((account) => account.id === receiptProposal.financialAccountId?.value)) setSourceAccountId(receiptProposal.financialAccountId.value);
+    setReceiptProposalApplied(true);
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -99,13 +175,13 @@ export default function TransactionForm({ transaction, categoryAccountId, onCanc
       let saved: Transaction | null;
       if (transaction) {
         await updateTransaction(transaction.id, values, categoryId);
-        saved = { ...transaction, ...values };
+        saved = { ...transaction, ...values, categoryId };
       } else {
         saved = await addManualTransaction(values, categoryId);
       }
       if (!saved) throw new Error('The transaction was not saved.');
       for (const attachment of pendingAttachments) {
-        await addAttachment(saved.id, attachment.fileName, attachment.fileType, attachment.dataUrl, 'Uploaded from transaction form');
+        await addAttachment(saved.id, attachment.fileName, attachment.fileType, attachment.dataUrl, attachment.kind === 'receipt' ? 'Receipt captured from transaction form' : 'Evidence uploaded from transaction form');
       }
       localStorage.removeItem('qifi_draft_ledger');
       onSaved?.(saved);
@@ -135,9 +211,43 @@ export default function TransactionForm({ transaction, categoryAccountId, onCanc
         <div><label className="block text-xs font-semibold text-zinc-400 mb-1">Category</label><SearchableAccountSelect value={categoryId} onChange={setCategoryId} accounts={categoryAccounts} placeholder="Search category by code or name"/></div>
       </div>
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4 space-y-3">
-        <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-semibold text-zinc-200 flex items-center gap-2"><Paperclip size={14}/>Attachments</p><p className="text-[10px] text-zinc-500">Receipts and evidence are preserved in create and edit modes.</p></div><label className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-2 text-xs text-zinc-200 cursor-pointer"><Upload size={13}/>Add files<input type="file" multiple className="hidden" onChange={handleFiles}/></label></div>
-        {[...savedAttachments.map((item) => ({ ...item, pending: false })), ...pendingAttachments.map((item) => ({ ...item, pending: true }))].map((item) => <div key={item.id} className="flex items-center justify-between rounded-lg border border-zinc-800 px-3 py-2 text-xs"><span className="truncate text-zinc-300">{item.fileName}{item.pending ? ' (uploads on save)' : ''}</span><div className="flex gap-2">{!item.pending && <button type="button" onClick={() => setPreviewAttachment(item as Attachment)} className="text-zinc-400 hover:text-white"><Eye size={13}/></button>}<button type="button" onClick={() => item.pending ? setPendingAttachments((current) => current.filter((entry) => entry.id !== item.id)) : deleteAttachment(item.id)} className="text-zinc-400 hover:text-rose-400"><Trash2 size={13}/></button></div></div>)}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div><p className="text-xs font-semibold text-zinc-200 flex items-center gap-2"><Paperclip size={14}/>Receipts & evidence</p><p className="text-[10px] text-zinc-500">Saved and pending files share one list; OCR suggestions always require confirmation.</p></div>
+          <div className="flex flex-wrap gap-2">
+            <label className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white cursor-pointer"><Camera size={13}/>Snap receipt<input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => handleFiles(event, 'receipt')}/></label>
+            <label className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-2 text-xs text-zinc-200 cursor-pointer"><Upload size={13}/>Add files<input type="file" accept="image/*,application/pdf,text/*" multiple className="hidden" onChange={(event) => handleFiles(event)}/></label>
+          </div>
+        </div>
+        {attachmentItems.length === 0 && <div className="rounded-lg border border-dashed border-zinc-800 px-3 py-4 text-center text-[11px] text-zinc-500">No receipt or evidence attached.</div>}
+        {attachmentItems.map((item) => {
+          const isPending = item.status === 'pending';
+          const attachment = item.attachment;
+          const isReceipt = isPending ? attachment.kind === 'receipt' : attachment.notes.toLowerCase().includes('receipt');
+          const deleting = !isPending && deletingAttachmentId === attachment.id;
+          const processing = !isPending && processingAttachmentId === attachment.id;
+          return <div key={`${item.status}-${attachment.id}`} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 px-3 py-2 text-xs">
+            <span className="min-w-0 flex items-center gap-2 text-zinc-300">{isReceipt ? <ReceiptText size={13} className="shrink-0 text-emerald-400"/> : <Paperclip size={13} className="shrink-0 text-zinc-500"/>}<span className="truncate">{attachment.fileName}</span>{isPending && <span className="shrink-0 text-[10px] text-amber-400">uploads on save</span>}</span>
+            <div className="flex shrink-0 items-center gap-2">
+              {!isPending && isReceipt && attachment.fileType.startsWith('image/') && <button type="button" disabled={processing} onClick={() => void handleProcessReceipt(attachment)} className="rounded-md bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-300 disabled:opacity-50">{processing ? 'Processing...' : attachment.processingStatus === 'failed' ? 'Retry OCR' : 'Extract receipt'}</button>}
+              {!isPending && <button type="button" aria-label={`Preview ${attachment.fileName}`} onClick={() => setPreviewAttachment(attachment)} className="text-zinc-400 hover:text-white"><Eye size={13}/></button>}
+              <button type="button" disabled={deleting} aria-label={`Remove ${attachment.fileName}`} onClick={() => isPending ? setPendingAttachments((current) => current.filter((entry) => entry.id !== attachment.id)) : void handleDeleteSavedAttachment(attachment.id)} className="text-zinc-400 hover:text-rose-400 disabled:opacity-50">{deleting ? <Loader2 size={13} className="animate-spin"/> : <Trash2 size={13}/>}</button>
+            </div>
+          </div>;
+        })}
       </div>
+      {receiptProposal && <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+        <div><p className="text-sm font-semibold text-amber-200">Review extracted receipt</p><p className="text-[11px] text-zinc-400">{receiptProposalApplied ? 'Suggestions were applied to this form for review. Submit the form to save them.' : 'Nothing below changes the transaction until you apply it, and the transaction is not saved until you submit the form.'}</p></div>
+        <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+          {[
+            ['Merchant', receiptProposal.merchantName], ['Date', receiptProposal.transactionDate], ['Total', receiptProposal.total], ['Subtotal', receiptProposal.subtotal],
+            ['Tax', receiptProposal.tax], ['Tip', receiptProposal.tip], ['Payment last 4', receiptProposal.paymentMethodLast4], ['Receipt #', receiptProposal.receiptNumber], ['Category', receiptProposal.categoryId],
+          ].filter((entry) => entry[1]).map(([label, field]) => {
+            const extracted = field as { value: string | number; confidence: number };
+            return <div key={String(label)} className={`rounded-lg border p-2 ${extracted.confidence < 0.7 ? 'border-amber-500/40 bg-amber-500/10' : 'border-zinc-800 bg-zinc-950/50'}`}><span className="block text-[10px] text-zinc-500">{label} · {Math.round(extracted.confidence * 100)}%</span><span className="text-zinc-200">{String(extracted.value)}</span></div>;
+          })}
+        </div>
+        <div className="flex justify-end gap-2"><button type="button" onClick={() => { setReceiptProposal(null); setReceiptProposalApplied(false); }} className="rounded-lg bg-zinc-800 px-3 py-2 text-xs text-zinc-300">Discard suggestions</button><button type="button" disabled={receiptProposalApplied} onClick={applyReceiptProposal} className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-zinc-950 disabled:opacity-50">{receiptProposalApplied ? 'Suggestions applied' : 'Apply suggestions to form'}</button></div>
+      </div>}
       {error && <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>}
       <div className="flex justify-end gap-3"><button type="button" onClick={onCancel} className="bg-zinc-800 px-4 py-2 rounded-xl text-sm text-zinc-300">Cancel</button><button disabled={saving} className="bg-emerald-600 disabled:opacity-50 px-5 py-2 rounded-xl text-sm font-semibold text-white">{saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Transaction'}</button></div>
     </form>
