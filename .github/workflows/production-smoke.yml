@@ -1,0 +1,56 @@
+name: Production smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/production-smoke.yml"
+      - "scripts/smoke-production.mjs"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qifi-production-smoke
+  cancel-in-progress: false
+
+jobs:
+  authenticated-state:
+    name: Authenticated production state
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Validate required secret configuration
+        shell: bash
+        env:
+          QIFI_SUPABASE_URL: ${{ secrets.QIFI_SUPABASE_URL }}
+          QIFI_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.QIFI_SUPABASE_PUBLISHABLE_KEY }}
+          QIFI_SMOKE_EMAIL: ${{ secrets.QIFI_SMOKE_EMAIL }}
+          QIFI_SMOKE_PASSWORD: ${{ secrets.QIFI_SMOKE_PASSWORD }}
+        run: |
+          missing=0
+          for name in QIFI_SUPABASE_URL QIFI_SUPABASE_PUBLISHABLE_KEY QIFI_SMOKE_EMAIL QIFI_SMOKE_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required repository secret: $name"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Run read-only authenticated smoke test
+        env:
+          QIFI_API_BASE_URL: https://api.qially.com
+          QIFI_SUPABASE_URL: ${{ secrets.QIFI_SUPABASE_URL }}
+          QIFI_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.QIFI_SUPABASE_PUBLISHABLE_KEY }}
+          QIFI_SMOKE_EMAIL: ${{ secrets.QIFI_SMOKE_EMAIL }}
+          QIFI_SMOKE_PASSWORD: ${{ secrets.QIFI_SMOKE_PASSWORD }}
+        run: node scripts/smoke-production.mjs
