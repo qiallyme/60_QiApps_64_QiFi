@@ -25,6 +25,7 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 - `E12` QiApi commit `4c06229` centralizes assistant and receipt inference in one server-side AI client and adds receipt processing/status routes using the existing attachment OCR columns. QiApi TypeScript, ESLint, 29 tests, and Cloudflare dry-run passed; QiFi TypeScript and production build passed. Production `OPENAI_API_KEY` is not yet configured, so authenticated live OCR and assistant verification remain open.
 - `E13` QiApi Worker version `10a7c836-ff0a-4f2c-b105-39537cee1155` is deployed: `/health/ready` returns 200, `/health/ai` returns the expected fail-closed 503 `AI_CONFIG_INVALID`, and receipt-route CORS returns 204. Production Pages serves `index-BJgJp3vm.js` and `TransactionForm-CKFL5JK_.js`; the live chunks contain the receipt API, camera UI, and explicit OCR review UI.
 - `E14` Production Worker secret inventory now includes `OPENAI_API_KEY`, and both `api.qially.com/health/ai` and the workers.dev deployment return 200 with `configured: true` without exposing the value. Secret-change version: `70ac4d90-7c40-42e2-bc1e-eefccf71b258`.
+- `E15` GitHub Actions production smoke run `29773236575` (job `88456329199`) passed on commit `0602a73`. It validated all four repository secrets, acquired a dedicated Supabase user session, received the complete authenticated finance state with populated transaction dropdown sources, and confirmed unauthenticated state returns 401. This test is read-only until workspace isolation is implemented.
 
 ## Closure audit of every formerly unchecked item
 
@@ -35,7 +36,7 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 | API-01 | Identify API clients, URLs, environment variables, proxies, services, and direct Supabase calls | COMPLETE_AND_VERIFIED | One finance client; direct Supabase use is auth/session only. E1, E7 |
 | API-02 | Confirm production uses centralized `251_QiApi` | COMPLETE_AND_VERIFIED | E1-E4 |
 | API-03 | Verify production and development Worker URLs via network | COMPLETE_BUT_NEEDS_VERIFICATION | Production verified; local development path still needs a recorded network capture. |
-| API-04 | Confirm deployed finance routes return authenticated live Supabase data | COMPLETE_BUT_NEEDS_VERIFICATION | Readiness/auth enforcement verified; authenticated state payload still needs automated proof. |
+| API-04 | Confirm deployed finance routes return authenticated live Supabase data | COMPLETE_AND_VERIFIED | Dedicated-user production state smoke passed. E15 |
 | API-05 | Inventory every finance route, caller, table, auth, and status | COMPLETE_AND_VERIFIED | Durable route matrix traced against both repositories. E10 |
 | API-06 | Identify requests to old Worker | COMPLETE_AND_VERIFIED | Repository and live bundle scan found none. E1, E8 |
 | API-07 | Identify duplicated business logic in old/new Workers | COMPLETE_AND_VERIFIED | Old finance Worker removed after migration. E8 |
@@ -162,9 +163,9 @@ Only incomplete implementation and required verification remain here. Phases are
 ### Phase 1 - Production identity, API contract, and smoke-test foundation
 
 - [x] Add a durable QiFi route/caller/table/auth matrix (`API-05`). Evidence: E10.
-- [ ] Add a dedicated authenticated production smoke-test identity and secure CI secrets.
-- [ ] Automate login/session acquisition without exposing credentials.
-- [ ] Assert authenticated `/api/finance/state` returns the expected schema and populated reference data.
+- [x] Add a dedicated authenticated production smoke-test identity and secure CI secrets. Evidence: E15.
+- [x] Automate login/session acquisition without exposing credentials. Evidence: E15.
+- [x] Assert authenticated `/api/finance/state` returns the expected schema and populated reference data. Evidence: E15.
 - [ ] Record development and production network evidence (`API-03`, `API-04`, `API-10`, `API-18`).
 - [ ] Add deployment gates for required Worker routes, origins, and secret names.
 
