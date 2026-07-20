@@ -23,6 +23,7 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 - `E10` `docs/finance-api-route-matrix.md` records every QiFi caller, Worker route, auth boundary, and backing table/service. The production smoke runner passed syntax validation; TypeScript and the production build passed. Its live authenticated run is correctly blocked until the four dedicated smoke identity variables are provisioned.
 - `E11` QiApi commit `f90e773` extracts the journal-line accounting rule and adds Money In, Money Out, balance, and invalid-amount tests. The complete Worker suite passed: 2 files, 18 tests; TypeScript and ESLint also passed.
 - `E12` QiApi commit `4c06229` centralizes assistant and receipt inference in one server-side AI client and adds receipt processing/status routes using the existing attachment OCR columns. QiApi TypeScript, ESLint, 29 tests, and Cloudflare dry-run passed; QiFi TypeScript and production build passed. Production `OPENAI_API_KEY` is not yet configured, so authenticated live OCR and assistant verification remain open.
+- `E13` QiApi Worker version `10a7c836-ff0a-4f2c-b105-39537cee1155` is deployed: `/health/ready` returns 200, `/health/ai` returns the expected fail-closed 503 `AI_CONFIG_INVALID`, and receipt-route CORS returns 204. Production Pages serves `index-BJgJp3vm.js` and `TransactionForm-CKFL5JK_.js`; the live chunks contain the receipt API, camera UI, and explicit OCR review UI.
 
 ## Closure audit of every formerly unchecked item
 
