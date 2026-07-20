@@ -22,6 +22,8 @@ All routes use the production base URL `https://api.qially.com`, require a Supab
 | PATCH | `/api/finance/raw-rows/:id` | review/import store | import_rows_raw |
 | POST | `/api/finance/attachments` | shared TransactionForm/store | attachments and Supabase Storage |
 | GET, DELETE | `/api/finance/attachments/:id/url` or `:id` | attachment preview/shared form | attachments and Supabase Storage |
+| POST | `/api/finance/attachments/:id/process-receipt` | shared TransactionForm receipt review | shared Worker AI client, attachments OCR columns, Supabase Storage |
+| GET | `/api/finance/attachments/:id/receipt-processing` | shared TransactionForm/API client | attachments OCR columns |
 | GET, POST | `/api/finance/rules` | CategoryRulesView/store | classification_rules |
 | PATCH, DELETE | `/api/finance/rules/:id` | CategoryRulesView/store | classification_rules |
 | GET, POST | `/api/finance/statements` | reconciliation store | statements |
@@ -44,3 +46,7 @@ All routes use the production base URL `https://api.qially.com`, require a Supab
 - `financialAccounts`, `ledgerAccounts`, and `categories` must be populated for transaction dropdowns.
 - CORS preflight from `https://fi.qially.com` must permit `Authorization` and `Content-Type`.
 - Mutating route behavior is covered separately by the transaction and schedule lifecycle phases so production smoke data can be created and cleaned up deliberately.
+
+## AI runtime configuration
+
+The assistant and receipt OCR share `src/ai/client.ts`. The only secret binding is `OPENAI_API_KEY`; models and timeout use the non-secret `OPENAI_MODEL`, `OPENAI_RECEIPT_MODEL`, and `OPENAI_TIMEOUT_MS` variables. Configure the missing production secret from the QiApi repository with `wrangler secret put OPENAI_API_KEY`, then deploy with `npm run deploy:production`. `GET /health/ai` reports whether the binding exists without returning its value.
