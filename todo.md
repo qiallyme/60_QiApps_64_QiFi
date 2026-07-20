@@ -24,6 +24,7 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 - `E11` QiApi commit `f90e773` extracts the journal-line accounting rule and adds Money In, Money Out, balance, and invalid-amount tests. The complete Worker suite passed: 2 files, 18 tests; TypeScript and ESLint also passed.
 - `E12` QiApi commit `4c06229` centralizes assistant and receipt inference in one server-side AI client and adds receipt processing/status routes using the existing attachment OCR columns. QiApi TypeScript, ESLint, 29 tests, and Cloudflare dry-run passed; QiFi TypeScript and production build passed. Production `OPENAI_API_KEY` is not yet configured, so authenticated live OCR and assistant verification remain open.
 - `E13` QiApi Worker version `10a7c836-ff0a-4f2c-b105-39537cee1155` is deployed: `/health/ready` returns 200, `/health/ai` returns the expected fail-closed 503 `AI_CONFIG_INVALID`, and receipt-route CORS returns 204. Production Pages serves `index-BJgJp3vm.js` and `TransactionForm-CKFL5JK_.js`; the live chunks contain the receipt API, camera UI, and explicit OCR review UI.
+- `E14` Production Worker secret inventory now includes `OPENAI_API_KEY`, and both `api.qially.com/health/ai` and the workers.dev deployment return 200 with `configured: true` without exposing the value. Secret-change version: `70ac4d90-7c40-42e2-bc1e-eefccf71b258`.
 
 ## Closure audit of every formerly unchecked item
 
@@ -172,7 +173,8 @@ Only incomplete implementation and required verification remain here. Phases are
 - [x] Add receipt camera capture plus normal file upload. Evidence: E12.
 - [x] Use the existing attachment OCR columns and shared Worker AI client; do not add duplicate receipt tables. Evidence: E12.
 - [x] Show merchant, date, total, subtotal, tax, tip, payment method, receipt number, category, and confidence for explicit review; map suggestions only after confirmation. Evidence: E12.
-- [ ] Configure production `OPENAI_API_KEY`, deploy QiApi/Pages, and run authenticated receipt and assistant tests before verifying `TX-14`.
+- [x] Configure production `OPENAI_API_KEY` and deploy QiApi/Pages. Evidence: E13-E14.
+- [ ] Run authenticated production receipt and assistant tests before verifying `TX-14`.
 - [ ] Decide and implement normal-form visibility for tax mapping and reconciliation status (`TX-05`).
 - [ ] Implement or explicitly separate Transfer and advanced Journal Entry modes (`TX-07`, `TX-12`).
 - [x] Add accounting tests for sign and debit/credit (`TX-08`, `TX-09`). Evidence: E11.
