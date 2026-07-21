@@ -93,6 +93,7 @@ try {
 }
 
 if (failures.length) {
+  failures.forEach(failure => console.error(`::error title=Production browser audit::${failure.replaceAll('\n', ' ')}`));
   throw new Error(`Production browser audit failed:\n${failures.join('\n')}`);
 }
 console.log(`Production browser audit passed: ${viewports.length} viewports x ${routes.length} authenticated routes; PWA manifest and service worker verified.`);
