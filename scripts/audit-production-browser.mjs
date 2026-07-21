@@ -51,9 +51,13 @@ try {
     });
 
     await page.goto('https://fi.qially.com/', { waitUntil: 'networkidle' });
+    await recordStage(`${viewport.name}: production login loaded; selecting passphrase mode.`);
     await page.getByRole('button', { name: 'Or unlock with passphrase' }).click();
+    await recordStage(`${viewport.name}: passphrase mode selected; entering session token.`);
     await page.locator('#qifi-passphrase').fill(accessToken);
+    await recordStage(`${viewport.name}: session token entered; submitting login.`);
     await page.getByRole('button', { name: 'Unlock', exact: true }).click();
+    await recordStage(`${viewport.name}: login submitted; waiting for authenticated shell.`);
     await page.getByText('Dashboard / Forecast', { exact: true }).first().waitFor({ timeout: 20_000 });
     await recordStage(`${viewport.name}: authenticated; auditing routes.`);
 
