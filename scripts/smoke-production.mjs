@@ -49,7 +49,9 @@ if (unauthenticated.response.status !== 401) {
 const smokeId = crypto.randomUUID();
 const counterpartyId = `SMOKE_TEST_cp_${smokeId}`;
 let transactionId = null;
+let openingDebtObligationId = null;
 let allocationVerified = false;
+let openingDebtVerified = false;
 try {
   const financialAccount = state.financialAccounts[0];
   const category = state.categories.find((item) => item.default_ledger_account_id || item.defaultLedgerAccountId) || state.categories[0];
@@ -85,7 +87,28 @@ try {
   const obligationRows = obligationsAfter.payload?.ok === true ? obligationsAfter.payload.data : obligationsAfter.payload;
   if (obligationRows.some((item) => item.transaction_id === transactionId)) throw new Error('Replacing an IOU allocation left a stale obligation.');
   allocationVerified = true;
+
+  const liability = state.ledgerAccounts.find((item) => item.type === 'liability' && item.is_active !== false);
+  if (!liability) throw new Error('No active liability account is available for the opening-debt smoke test.');
+  const openingDebt = await apiRequest('/api/finance/obligations/opening-debt', { method: 'POST', body: JSON.stringify({
+    counterpartyId, liabilityAccountId: liability.id, amount: 25, description: `SMOKE_TEST_opening_debt_${smokeId}`,
+    incurredDate: new Date().toISOString().slice(0, 10), dueDate: null,
+  }) });
+  const openingDebtRow = openingDebt.payload?.ok === true ? openingDebt.payload.data : openingDebt.payload;
+  if (!openingDebt.response.ok || !openingDebtRow?.id || !openingDebtRow.originating_journal_entry_id) {
+    throw new Error(`Opening debt creation failed (${openingDebt.response.status}): ${responseDetail(openingDebt)}`);
+  }
+  openingDebtObligationId = openingDebtRow.id;
+  const afterDebtResult = await apiRequest('/api/finance/state');
+  const afterDebt = afterDebtResult.payload?.ok === true ? afterDebtResult.payload.data : afterDebtResult.payload;
+  const debtLines = afterDebt.journalLines.filter((line) => line.journal_entry_id === openingDebtRow.originating_journal_entry_id);
+  if (debtLines.length !== 2 || !debtLines.some((line) => line.ledger_account_id === 'ledger-opening-balance-equity' && Number(line.debit) === 25 && Number(line.credit) === 0) || !debtLines.some((line) => line.ledger_account_id === liability.id && Number(line.credit) === 25 && Number(line.debit) === 0)) {
+    throw new Error('Opening debt did not post debit Opening Balance Equity and credit the selected liability.');
+  }
+  if (afterDebt.transactions.some((item) => item.description_clean === `SMOKE_TEST_opening_debt_${smokeId}`)) throw new Error('Opening debt incorrectly created a cash transaction.');
+  openingDebtVerified = true;
 } finally {
+  if (openingDebtObligationId) await apiRequest(`/api/finance/obligations/${encodeURIComponent(openingDebtObligationId)}`, { method: 'DELETE' });
   if (transactionId) await apiRequest(`/api/finance/transactions/${transactionId}`, { method: 'DELETE' });
   await apiRequest(`/api/finance/counterparties/${encodeURIComponent(counterpartyId)}`, { method: 'DELETE' });
 }
@@ -96,5 +119,6 @@ console.log(JSON.stringify({
   authenticatedStateStatus: stateResult.response.status,
   unauthenticatedStateStatus: unauthenticated.response.status,
   counterpartyAllocationMutation: allocationVerified,
+  openingDebtMutation: openingDebtVerified,
   counts: Object.fromEntries(arrayFields.map((field) => [field, state[field].length])),
 }, null, 2));
