@@ -83,7 +83,9 @@ try {
   await recordStage('Viewport routes passed; auditing production PWA control.');
   const pwaPage = await pwaContext.newPage();
   await pwaPage.goto('https://fi.qially.com/', { waitUntil: 'networkidle' });
+  await pwaPage.evaluate(() => navigator.serviceWorker.ready);
   await pwaPage.reload({ waitUntil: 'networkidle' });
+  await pwaPage.waitForFunction(() => Boolean(navigator.serviceWorker.controller), null, { timeout: 15_000 });
   const pwa = await pwaPage.evaluate(async () => {
     const manifest = await fetch('/manifest.webmanifest').then(response => response.json());
     const registration = await navigator.serviceWorker.ready;
