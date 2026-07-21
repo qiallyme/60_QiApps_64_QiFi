@@ -194,6 +194,11 @@ export interface ImportPreviewRow {
   isDuplicate: boolean;
   duplicateMatch: any;
   memo: string;
+  providerReference?: string;
+  importKind?: string;
+  requiresReview?: boolean;
+  subtotal?: number;
+  fee?: number;
 }
 
 export interface ImportPreviewResponse {
@@ -202,6 +207,11 @@ export interface ImportPreviewResponse {
   rows: ImportPreviewRow[];
   missingCategories: string[];
   missingCounterparties: string[];
+  providerProfile?: 'cash_app' | 'generic';
+  excludedFailedRows?: number;
+  excludedNonTransactionRows?: number;
+  requiresReviewCount?: number;
+  duplicateCount?: number;
 }
 
 export interface ReceiptProcessingResponse {
@@ -371,7 +381,7 @@ export const qifinanceApi = {
     fileName: string,
     sourceAccountId: string,
     rows: ImportPreviewRow[]
-  ): Promise<{ message: string; batchId: string; totalRows: number; createdCount: number; transactions: Transaction[] }> {
+  ): Promise<{ message: string; batchId: string; totalRows: number; createdCount: number; reviewCount?: number; duplicateCount?: number; transactions: Transaction[] }> {
     return postJson('/api/finance/import/commit', {
       fileName,
       sourceAccountId,

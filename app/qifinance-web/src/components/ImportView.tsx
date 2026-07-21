@@ -7,6 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { useQiStore } from '../store';
 import SearchableAccountSelect from './SearchableAccountSelect';
 import { prepareCsvImport } from '../lib/csv';
+import { qifinanceApi } from '../lib/qifinanceApi';
 import { 
   Upload, Tag, Clipboard, ListFilter, Trash2, CheckCircle, 
   Settings, HelpCircle, FileText, ArrowRight, Plus, Eye,
@@ -26,7 +27,8 @@ export default function ImportView() {
     addCounterparty,
     addAccount,
     counterparties,
-    updateRawRow
+    updateRawRow,
+    refreshData,
   } = useQiStore();
 
   // Ingestion Inbound State
@@ -42,6 +44,8 @@ export default function ImportView() {
   const [showMappingStep, setShowMappingStep] = useState(false);
   const [amountMode, setAmountMode] = useState<'single' | 'separate'>('single');
   const [importSafetyNotice, setImportSafetyNotice] = useState('');
+  const [isPreviewingImport, setIsPreviewingImport] = useState(false);
+  const [importPreviewError, setImportPreviewError] = useState('');
 
   const handleAmountModeChange = (mode: 'single' | 'separate') => {
     setAmountMode(mode);
@@ -341,8 +345,45 @@ export default function ImportView() {
     }
   };
 
-  const handleIngest = () => {
+  const handleIngest = async () => {
     if (parsedLines.length === 0) return;
+
+    setIsPreviewingImport(true);
+    setImportPreviewError('');
+    try {
+      const preview = await qifinanceApi.getImportPreview(
+        rawText,
+        fileName,
+        targetAccountId,
+        columnMappings,
+        hasHeaders,
+        amountMode,
+      );
+      const duplicateCount = preview.duplicateCount ?? preview.rows.filter(row => row.isDuplicate).length;
+      const reviewCount = preview.requiresReviewCount ?? preview.rows.filter(row => row.requiresReview).length;
+      const readyCount = preview.rows.length - duplicateCount - reviewCount;
+      const confirmed = window.confirm(
+        `Worker preview complete for ${preview.rows.length} row(s).\n\n` +
+        `${readyCount} high-confidence row(s) can be posted.\n` +
+        `${reviewCount} ambiguous row(s) will be staged in Review Queue.\n` +
+        `${duplicateCount} duplicate row(s) will be ignored.\n\n` +
+        `Continue with this staged import?`,
+      );
+      if (!confirmed) return;
+
+      const result = await qifinanceApi.commitImport(fileName, targetAccountId, preview.rows);
+      await refreshData();
+      alert(
+        `Import staged successfully: ${result.createdCount} posted, ${result.reviewCount ?? reviewCount} sent to review, and ${result.duplicateCount ?? duplicateCount} duplicate(s) ignored.`,
+      );
+      resetImportState();
+      return;
+    } catch (error) {
+      setImportPreviewError(error instanceof Error ? error.message : 'CSV preview failed.');
+      return;
+    } finally {
+      setIsPreviewingImport(false);
+    }
 
     const dataLines = hasHeaders ? parsedLines.slice(1) : parsedLines;
     
@@ -923,6 +964,12 @@ export default function ImportView() {
                 <span>{importSafetyNotice}</span>
               </div>
             )}
+            {importPreviewError && (
+              <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-xs text-rose-200 flex items-start gap-2">
+                <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                <span>{importPreviewError}</span>
+              </div>
+            )}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900/30 p-4 rounded-xl border border-zinc-800/60">
               <div className="space-y-1">
                 <span className="text-[10px] uppercase font-bold text-zinc-400 font-mono tracking-wider block">Amount Column Structure</span>
@@ -1063,13 +1110,13 @@ export default function ImportView() {
               </button>
               <button
                 onClick={handleIngest}
-                disabled={(() => {
+                disabled={isPreviewingImport || (() => {
                   const mappedTargets = Object.values(columnMappings).flat();
                   return targetFields.some(f => f.required && !mappedTargets.includes(f.id));
                 })()}
                 className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-650 disabled:border-transparent text-white px-5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer border border-emerald-500/30 shadow-lg transition-all"
               >
-                <CheckCircle size={14} /> Ingest {hasHeaders ? parsedLines.length - 1 : parsedLines.length} Rows
+                <CheckCircle size={14} /> {isPreviewingImport ? 'Running Worker Preview…' : `Preview ${hasHeaders ? parsedLines.length - 1 : parsedLines.length} Rows`}
               </button>
             </div>
           </div>
