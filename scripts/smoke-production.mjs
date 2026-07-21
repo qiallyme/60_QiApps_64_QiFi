@@ -45,6 +45,7 @@ if (unauthenticated.response.status !== 401) {
   throw new Error(`Unauthenticated finance state returned ${unauthenticated.response.status}, expected 401.`);
 }
 
+// Each run uses unique IDs so retries remain isolated after any interrupted cleanup.
 const smokeId = crypto.randomUUID();
 const counterpartyId = `SMOKE_TEST_cp_${smokeId}`;
 let transactionId = null;
