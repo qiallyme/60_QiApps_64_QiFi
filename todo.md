@@ -26,6 +26,7 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 - `E13` QiApi Worker version `10a7c836-ff0a-4f2c-b105-39537cee1155` is deployed: `/health/ready` returns 200, `/health/ai` returns the expected fail-closed 503 `AI_CONFIG_INVALID`, and receipt-route CORS returns 204. Production Pages serves `index-BJgJp3vm.js` and `TransactionForm-CKFL5JK_.js`; the live chunks contain the receipt API, camera UI, and explicit OCR review UI.
 - `E14` Production Worker secret inventory now includes `OPENAI_API_KEY`, and both `api.qially.com/health/ai` and the workers.dev deployment return 200 with `configured: true` without exposing the value. Secret-change version: `70ac4d90-7c40-42e2-bc1e-eefccf71b258`.
 - `E15` GitHub Actions production smoke run `29773236575` (job `88456329199`) passed on commit `0602a73`. It validated all four repository secrets, acquired a dedicated Supabase user session, received the complete authenticated finance state with populated transaction dropdown sources, and confirmed unauthenticated state returns 401. This test is read-only until workspace isolation is implemented.
+- `E16` QiApi commit `0a5e581` and QiFi commit `63aff9e` implement schedule edit, pause/resume, deterministic occurrence generation, delete, refresh, and retry duplicate prevention. QiFi TypeScript/build passed; QiApi TypeScript, ESLint, 37 tests, and dry-run passed. Worker version `658570cc-45e0-4ce7-8a27-530ddf46159d` is deployed; production generation CORS returns 204 and unauthenticated access returns 401. Authenticated production lifecycle mutation remains open until smoke-workspace isolation exists.
 
 ## Closure audit of every formerly unchecked item
 
@@ -94,7 +95,7 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 | SCH-03 | Stay closed after refresh/navigation/restart | COMPLETE_BUT_NEEDS_VERIFICATION | State is not persisted open; browser/PWA proof missing. |
 | SCH-04 | Cancel does not create incomplete schedule | COMPLETE_BUT_NEEDS_VERIFICATION | Submit-only mutation; interaction test missing. |
 | SCH-05 | Create persists and updates projections | COMPLETE_BUT_NEEDS_VERIFICATION | API mutation/refresh exists; production assertion missing. |
-| SCH-06 | Edit, pause, resume, generate, delete, refresh, no duplicates | ACTUALLY_INCOMPLETE | Full lifecycle/generation/idempotency is not implemented or proven. Phase 3. |
+| SCH-06 | Edit, pause, resume, generate, delete, refresh, no duplicates | COMPLETE_BUT_NEEDS_VERIFICATION | Full lifecycle and deterministic retry protection are implemented and locally verified; isolated authenticated production lifecycle test remains. E16 |
 
 ### Dashboard, reports, and forecasts
 
@@ -185,7 +186,8 @@ Only incomplete implementation and required verification remain here. Phases are
 
 ### Phase 3 - Recurring schedule lifecycle
 
-- [ ] Implement/test create, edit, pause, resume, occurrence generation, delete, and idempotent duplicate prevention (`SCH-03` through `SCH-06`).
+- [x] Implement create, edit, pause, resume, occurrence generation, delete, refresh, calendar-safe advancement, and deterministic duplicate prevention. Evidence: E16.
+- [ ] Run the authenticated lifecycle mutation test in an isolated smoke workspace (`SCH-03` through `SCH-06`).
 - [ ] Assert every lifecycle mutation refreshes forecasts and scheduled cash-flow reports.
 
 ### Phase 4 - Report and forecast reconciliation

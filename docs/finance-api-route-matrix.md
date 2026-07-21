@@ -30,6 +30,7 @@ All routes use the production base URL `https://api.qially.com`, require a Supab
 | PATCH, DELETE | `/api/finance/statements/:id` | reconciliation store | statements |
 | GET, POST | `/api/finance/schedules` | ForecastView/store | recurring_transactions |
 | PATCH, DELETE | `/api/finance/schedules/:id` | ForecastView/store | recurring_transactions |
+| POST | `/api/finance/schedules/:id/generate` | ForecastView/store | recurring_transactions, transactions, journal_entries, journal_lines |
 | GET, POST | `/api/finance/counterparties` | shared form/counterparty store | counterparties |
 | PATCH, DELETE | `/api/finance/counterparties/:id` | counterparty store | counterparties |
 | GET, POST | `/api/finance/obligations` | accountability store | obligations |
