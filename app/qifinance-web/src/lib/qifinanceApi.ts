@@ -435,6 +435,10 @@ export const qifinanceApi = {
     return patchJson(`/api/finance/schedules/${idPath(id)}`, schedule, `Failed to update schedule ${id}`);
   },
 
+  async generateSchedule(id: string, occurrenceDate: string): Promise<{ generated: boolean; duplicatePrevented: boolean; transaction: Transaction; schedule: any }> {
+    return postJson(`/api/finance/schedules/${idPath(id)}/generate`, { occurrenceDate }, `Failed to generate schedule ${id}`);
+  },
+
   async deleteSchedule(id: string): Promise<any> {
     return deleteJson(`/api/finance/schedules/${idPath(id)}`, `Failed to delete schedule ${id}`);
   },

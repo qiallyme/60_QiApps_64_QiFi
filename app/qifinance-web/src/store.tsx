@@ -88,6 +88,7 @@ interface QiContextType {
   addSchedule: (schedule: Omit<RecurringSchedule, 'id' | 'isActive'>) => void;
   updateSchedule: (schedule: RecurringSchedule) => void;
   deleteSchedule: (id: string) => void;
+  generateSchedule: (id: string, occurrenceDate: string) => Promise<{ generated: boolean; duplicatePrevented: boolean }>;
 
   // Counterparty Actions
   addCounterparty: (cp: Omit<Counterparty, 'id' | 'createdAt' | 'workspaceId'> & { id?: string }) => Promise<Counterparty>;
@@ -1128,6 +1129,17 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     }
   };
 
+  const generateSchedule = async (id: string, occurrenceDate: string): Promise<{ generated: boolean; duplicatePrevented: boolean }> => {
+    try {
+      const result = await qifinanceApi.generateSchedule(id, occurrenceDate);
+      await refreshApiState();
+      return { generated: result.generated, duplicatePrevented: result.duplicatePrevented };
+    } catch (error) {
+      reportSyncError('Generate recurring transaction', error);
+      throw error;
+    }
+  };
+
   // -------------------------
   // Counterparty Actions
   // -------------------------
@@ -1291,6 +1303,7 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       addSchedule,
       updateSchedule,
       deleteSchedule,
+      generateSchedule,
       addCounterparty,
       updateCounterparty,
       deleteCounterparty,

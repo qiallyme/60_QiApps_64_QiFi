@@ -10,7 +10,7 @@ import TransactionForm from './TransactionForm';
 import { 
   Calendar, CreditCard, ArrowUpRight, ArrowDownLeft, Plus, 
   Trash2, ToggleLeft, ToggleRight, DollarSign, TrendingUp, Sparkles, X, PlusCircle,
-  FileText, Users, Upload, Check, Bookmark, Layers, Sliders, ShieldCheck, Database
+  FileText, Users, Upload, Check, Bookmark, Layers, Sliders, ShieldCheck, Database, Pencil, Play
 } from 'lucide-react';
 
 const DBOARD_DEFAULT_CODES: Record<string, { code: string; label: string }[]> = {
@@ -42,6 +42,7 @@ export default function ForecastView() {
     addSchedule, 
     deleteSchedule, 
     updateSchedule,
+    generateSchedule,
     getAccountBalance,
     addAccount,
     addManualTransaction,
@@ -286,6 +287,9 @@ export default function ForecastView() {
   // New Schedule form state
   // A saved draft must never force an editor open on page load.
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const [generatingScheduleId, setGeneratingScheduleId] = useState<string | null>(null);
+  const [scheduleMessage, setScheduleMessage] = useState('');
   const [newSchedName, setNewSchedName] = useState(() => {
     const draft = localStorage.getItem('qifi_draft_schedule');
     if (draft) {
@@ -525,7 +529,7 @@ export default function ForecastView() {
     e.preventDefault();
     if (!newSchedName || !newSchedAmount || isNaN(Number(newSchedAmount))) return;
 
-    addSchedule({
+    const values = {
       name: newSchedName,
       amount: Number(newSchedAmount),
       accountId: newSchedCat,
@@ -533,7 +537,10 @@ export default function ForecastView() {
       frequency: newSchedFreq,
       nextDueDate: newSchedDate,
       tags: newSchedTags.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
-    });
+    };
+    const existing = editingScheduleId ? schedules.find((schedule) => schedule.id === editingScheduleId) : null;
+    if (existing) updateSchedule({ ...existing, ...values });
+    else addSchedule(values);
 
     setNewSchedName('');
     setNewSchedAmount('');
@@ -541,6 +548,7 @@ export default function ForecastView() {
     localStorage.removeItem('qifi_draft_schedule');
     setIsDraftSaved(false);
     setShowAddForm(false);
+    setEditingScheduleId(null);
   };
 
   const handleToggleActive = (sched: RecurringSchedule) => {
@@ -548,6 +556,33 @@ export default function ForecastView() {
       ...sched,
       isActive: !sched.isActive
     });
+  };
+
+  const handleEditSchedule = (schedule: RecurringSchedule) => {
+    setEditingScheduleId(schedule.id);
+    setNewSchedName(schedule.name);
+    setNewSchedAmount(String(schedule.amount));
+    setNewSchedCat(schedule.accountId);
+    setNewSchedSource(schedule.sourceAccountId);
+    setNewSchedFreq(schedule.frequency);
+    setNewSchedDate(schedule.nextDueDate);
+    setNewSchedTags(schedule.tags.join(', '));
+    setShowAddForm(true);
+    setScheduleMessage('');
+  };
+
+  const handleGenerateSchedule = async (schedule: RecurringSchedule) => {
+    if (generatingScheduleId) return;
+    setGeneratingScheduleId(schedule.id);
+    setScheduleMessage('');
+    try {
+      const result = await generateSchedule(schedule.id, schedule.nextDueDate);
+      setScheduleMessage(result.duplicatePrevented ? 'Existing occurrence reused; no duplicate was created.' : `Generated ${schedule.name} for ${schedule.nextDueDate}.`);
+    } catch (reason) {
+      setScheduleMessage(reason instanceof Error ? reason.message : 'Schedule generation failed.');
+    } finally {
+      setGeneratingScheduleId(null);
+    }
   };
 
   return (
@@ -1007,7 +1042,7 @@ export default function ForecastView() {
           </p>
         </div>
         <button
-          onClick={() => setShowAddForm(!showAddForm)}
+          onClick={() => { setShowAddForm(!showAddForm); if (showAddForm) setEditingScheduleId(null); }}
           className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium border border-emerald-500/30 shadow-lg cursor-pointer transition-all"
         >
           {showAddForm ? <X size={14} /> : <Plus size={14} />}
@@ -1020,7 +1055,7 @@ export default function ForecastView() {
         <form onSubmit={handleSubmit} className="fixed z-[80] inset-x-3 sm:inset-x-8 top-16 sm:top-24 mx-auto max-w-3xl max-h-[80vh] overflow-y-auto bg-zinc-900 p-5 sm:p-6 rounded-2xl border border-zinc-700 shadow-2xl backdrop-blur-xl space-y-4 animate-fadeIn">
           <h3 className="font-semibold text-zinc-100 text-sm flex items-center gap-1.5">
             <PlusCircle size={16} className="text-emerald-400" />
-            Set Up Recurring Money Schedule
+            {editingScheduleId ? 'Edit Recurring Money Schedule' : 'Set Up Recurring Money Schedule'}
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Name */}
@@ -1135,6 +1170,7 @@ export default function ForecastView() {
                 localStorage.removeItem('qifi_draft_schedule');
                 setIsDraftSaved(false);
                 setShowAddForm(false);
+                setEditingScheduleId(null);
               }}
               className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
             >
@@ -1144,7 +1180,7 @@ export default function ForecastView() {
               type="submit"
               className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-lg text-xs font-semibold shadow-sm cursor-pointer"
             >
-              Add Schedule
+              {editingScheduleId ? 'Save Schedule' : 'Add Schedule'}
             </button>
           </div>
         </form>
@@ -1249,6 +1285,7 @@ export default function ForecastView() {
       {/* CORE ACTIVE RECURRING SCHEDULES */}
       <div className="bg-zinc-900/40 p-5 rounded-2xl border border-zinc-800/80 shadow-xl space-y-4 backdrop-blur-sm">
         <h3 className="text-sm font-semibold text-zinc-100 font-display">Active Recurring Schedules ({schedules.length})</h3>
+        {scheduleMessage && <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-300">{scheduleMessage}</div>}
         
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left text-zinc-300">
@@ -1259,7 +1296,7 @@ export default function ForecastView() {
                 <th className="px-4 py-2.5">Frequency</th>
                 <th className="px-4 py-2.5">Next Date</th>
                 <th className="px-4 py-2.5 text-right">Amount</th>
-                <th className="px-4 py-2.5 text-right">Toggle</th>
+                <th className="px-4 py-2.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/40">
@@ -1296,6 +1333,21 @@ export default function ForecastView() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-3">
+                        <button
+                          onClick={() => void handleGenerateSchedule(sched)}
+                          disabled={!sched.isActive || generatingScheduleId === sched.id}
+                          title="Generate the next due transaction"
+                          className="text-zinc-400 hover:text-emerald-300 disabled:opacity-30 cursor-pointer"
+                        >
+                          <Play size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleEditSchedule(sched)}
+                          title="Edit schedule"
+                          className="text-zinc-400 hover:text-zinc-200 cursor-pointer"
+                        >
+                          <Pencil size={13} />
+                        </button>
                         <button
                           onClick={() => handleToggleActive(sched)}
                           className="text-zinc-400 hover:text-zinc-200 cursor-pointer"
