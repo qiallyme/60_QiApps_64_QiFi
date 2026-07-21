@@ -46,7 +46,7 @@ jobs:
           done
           exit "$missing"
 
-      - name: Run read-only authenticated smoke test
+      - name: Run isolated authenticated smoke test with cleanup
         env:
           QIFI_API_BASE_URL: https://api.qially.com
           QIFI_SUPABASE_URL: ${{ secrets.QIFI_SUPABASE_URL }}

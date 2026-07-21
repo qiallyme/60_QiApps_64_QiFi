@@ -15,6 +15,7 @@ const request = async (url, init = {}) => {
   try { payload = body ? JSON.parse(body) : null; } catch { payload = body; }
   return { response, payload };
 };
+const responseDetail = (result) => JSON.stringify(result.payload)?.slice(0, 500) || 'no response body';
 
 const auth = await request(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
   method: 'POST',
@@ -52,14 +53,14 @@ try {
   const financialAccount = state.financialAccounts[0];
   const category = state.categories.find((item) => item.default_ledger_account_id || item.defaultLedgerAccountId) || state.categories[0];
   const counterparty = await apiRequest('/api/finance/counterparties', { method: 'POST', body: JSON.stringify({ id: counterpartyId, name: `SMOKE_TEST_${smokeId}`, description: 'Automated production smoke fixture', tags: ['SMOKE_TEST'], isBusiness: false }) });
-  if (!counterparty.response.ok) throw new Error(`Smoke counterparty creation failed (${counterparty.response.status}).`);
+  if (!counterparty.response.ok) throw new Error(`Smoke counterparty creation failed (${counterparty.response.status}): ${responseDetail(counterparty)}`);
 
   const transaction = await apiRequest('/api/finance/transactions', { method: 'POST', body: JSON.stringify({
     date: new Date().toISOString().slice(0, 10), description: `SMOKE_TEST_split_${smokeId}`, rawDescription: `SMOKE_TEST_split_${smokeId}`,
     amount: -10, financialAccountId: financialAccount.id, sourceAccountId: financialAccount.id, categoryId: category.id,
     categoryAccountId: category.default_ledger_account_id || category.defaultLedgerAccountId, counterparty: `SMOKE_TEST_${smokeId}`, tags: ['SMOKE_TEST'],
   }) });
-  if (!transaction.response.ok) throw new Error(`Smoke transaction creation failed (${transaction.response.status}).`);
+  if (!transaction.response.ok) throw new Error(`Smoke transaction creation failed (${transaction.response.status}): ${responseDetail(transaction)}`);
   transactionId = (transaction.payload?.ok === true ? transaction.payload.data : transaction.payload)?.id;
   if (!transactionId) throw new Error('Smoke transaction response did not include an id.');
 
@@ -69,7 +70,7 @@ try {
   ] }) });
   const firstRows = firstAllocation.payload?.ok === true ? firstAllocation.payload.data : firstAllocation.payload;
   if (!firstAllocation.response.ok || firstRows?.length !== 2 || !firstRows.some((row) => row.treatment === 'iou' && row.obligation_id) || !firstRows.some((row) => row.treatment === 'gift' && !row.obligation_id)) {
-    throw new Error(`Smoke allocation creation failed (${firstAllocation.response.status}).`);
+    throw new Error(`Smoke allocation creation failed (${firstAllocation.response.status}): ${responseDetail(firstAllocation)}`);
   }
 
   const replacement = await apiRequest(`/api/finance/transactions/${transactionId}/allocations`, { method: 'PUT', body: JSON.stringify({ allocations: [
@@ -77,7 +78,7 @@ try {
   ] }) });
   const replacementRows = replacement.payload?.ok === true ? replacement.payload.data : replacement.payload;
   if (!replacement.response.ok || replacementRows?.length !== 1 || replacementRows[0].treatment !== 'shared' || replacementRows[0].obligation_id) {
-    throw new Error(`Smoke allocation replacement failed (${replacement.response.status}).`);
+    throw new Error(`Smoke allocation replacement failed (${replacement.response.status}): ${responseDetail(replacement)}`);
   }
   const obligationsAfter = await apiRequest('/api/finance/obligations');
   const obligationRows = obligationsAfter.payload?.ok === true ? obligationsAfter.payload.data : obligationsAfter.payload;
