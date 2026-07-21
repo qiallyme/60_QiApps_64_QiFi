@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: qifi-production-browser-audit
@@ -42,9 +43,31 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Audit production viewports and PWA
+        id: audit
+        continue-on-error: true
         env:
           QIFI_SUPABASE_URL: ${{ secrets.QIFI_SUPABASE_URL }}
           QIFI_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.QIFI_SUPABASE_PUBLISHABLE_KEY }}
           QIFI_SMOKE_EMAIL: ${{ secrets.QIFI_SMOKE_EMAIL }}
           QIFI_SMOKE_PASSWORD: ${{ secrets.QIFI_SMOKE_PASSWORD }}
         run: npm run audit:production-browser
+
+      - name: Publish sanitized audit status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUDIT_OUTCOME: ${{ steps.audit.outcome }}
+        shell: bash
+        run: |
+          description="$(head -n 1 browser-audit-result.txt 2>/dev/null || echo 'Browser audit did not produce a result')"
+          state="success"
+          if [ "$AUDIT_OUTCOME" != "success" ]; then state="failure"; fi
+          jq -n --arg state "$state" --arg description "$description" \
+            '{state:$state,context:"qifi/production-browser-details",description:$description}' > /tmp/audit-status.json
+          curl --fail-with-body -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -d @/tmp/audit-status.json
+          if [ "$AUDIT_OUTCOME" != "success" ]; then exit 1; fi

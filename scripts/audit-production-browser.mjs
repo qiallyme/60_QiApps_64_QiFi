@@ -1,4 +1,5 @@
 import { chromium } from '../app/qifinance-web/node_modules/@playwright/test/index.mjs';
+import { writeFile } from 'node:fs/promises';
 
 const required = ['QIFI_SUPABASE_URL', 'QIFI_SUPABASE_PUBLISHABLE_KEY', 'QIFI_SMOKE_EMAIL', 'QIFI_SMOKE_PASSWORD'];
 for (const name of required) {
@@ -93,7 +94,9 @@ try {
 }
 
 if (failures.length) {
+  await writeFile('browser-audit-result.txt', failures[0].replaceAll('\n', ' ').slice(0, 130), 'utf8');
   failures.forEach(failure => console.error(`::error title=Production browser audit::${failure.replaceAll('\n', ' ')}`));
   throw new Error(`Production browser audit failed:\n${failures.join('\n')}`);
 }
+await writeFile('browser-audit-result.txt', 'All required viewports, routes, console/network checks, manifest, and service worker passed.', 'utf8');
 console.log(`Production browser audit passed: ${viewports.length} viewports x ${routes.length} authenticated routes; PWA manifest and service worker verified.`);
