@@ -58,7 +58,7 @@ try {
     await recordStage(`${viewport.name}: session token entered; submitting login.`);
     await page.getByRole('button', { name: 'Unlock', exact: true }).click();
     await recordStage(`${viewport.name}: login submitted; waiting for authenticated shell.`);
-    await page.getByText('Dashboard / Forecast', { exact: true }).first().waitFor({ timeout: 20_000 });
+    await page.locator('.app-shell').waitFor({ timeout: 20_000 });
     await recordStage(`${viewport.name}: authenticated; auditing routes.`);
 
     for (const route of routes) {
