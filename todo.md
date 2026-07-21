@@ -29,6 +29,7 @@ Updated 2026-07-21. This document supersedes the reopened follow-up checklist. E
 - `E16` QiApi commit `0a5e581` and QiFi commit `63aff9e` implement schedule edit, pause/resume, deterministic occurrence generation, delete, refresh, and retry duplicate prevention. QiFi TypeScript/build passed; QiApi TypeScript, ESLint, 37 tests, and dry-run passed. Worker version `658570cc-45e0-4ce7-8a27-530ddf46159d` is deployed; production generation CORS returns 204 and unauthenticated access returns 401. Authenticated production lifecycle mutation remains open until smoke-workspace isolation exists.
 - `E17` QiFi centralizes account balances, calendar-safe forecast occurrences, and source-ledger integrity checks in `financeMath.ts`. Four focused tests pass for debit-normal balances, balanced journals, missing/orphan mappings, and month-end recurrence; TypeScript and the production build pass. Reports now show debit/credit reconciliation status, forecasts preserve legitimate zero ledger balances, and runtime report/reconciliation dates derive from the current date. Authenticated production mutation/reconciliation proof remains open.
 - `E18` GitHub Actions production browser run `29805896246` passed on commit `f3e6398`. Using the dedicated authenticated smoke identity, it exercised dashboard, transaction list/create, reports, reconciliation, and evidence at 320, 375, 390, 430, 768, and 1440 pixels (36 route/viewport combinations), asserted no page-level horizontal overflow, and found no browser console, page, or unexplained network failures. It also verified the live manifest metadata/icons and an active service worker controlling the page. This does not replace remaining interaction/screenshot checks or a real installed-standalone launch.
+- `E19` A read-only audit of the real 4,259-row Cash App export in QiServer proved the old frontend comma-splitter misread 257 physical lines. The replacement RFC-style parser reads all 4,259 records as 10 consistent columns and passes quoted-comma, escaped-quote, embedded-newline, malformed-row, and Cash App safety tests. Cash App detection now presets safe mappings and explicitly excludes 1,156 non-completed rows plus 18 zero-dollar notifications, leaving 3,085 completed non-zero rows for review. No production rows were imported. The remaining server-preview/explicit-commit and transfer-classification gates are tracked below.
 
 ## Closure audit of every formerly unchecked item
 
@@ -162,6 +163,15 @@ Updated 2026-07-21. This document supersedes the reopened follow-up checklist. E
 ## Prioritized launch completion plan
 
 Only incomplete implementation and required verification remain here. Phases are ordered by dependency and launch impact.
+
+### Phase 0 - Safe complex CSV ingestion
+
+- [x] Replace naive comma splitting with quoted-field/newline-safe CSV parsing and verify against the real Cash App export. Evidence: E19.
+- [x] Detect the Cash App schema, exclude non-completed and zero-dollar notification rows with a visible count, and apply provider-specific column mappings. Evidence: E19.
+- [ ] Make the UI call the Worker preview endpoint and display duplicate, exclusion, sign, and mapping results before any commit.
+- [ ] Prevent `/import/commit` from silently finalizing unreviewed or suspense-mapped transactions; route ambiguous rows and transfers through review.
+- [ ] Add Cash App transfer, fee, refund, failed payment, duplicate, quoted-comma, and retry integration tests.
+- [ ] Run an isolated authenticated production preview; commit only a small prefixed fixture with guaranteed cleanup before approving the full file.
 
 ### Phase 1 - Production identity, API contract, and smoke-test foundation
 

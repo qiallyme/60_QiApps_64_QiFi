@@ -6,6 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQiStore } from '../store';
 import SearchableAccountSelect from './SearchableAccountSelect';
+import { prepareCsvImport } from '../lib/csv';
 import { 
   Upload, Tag, Clipboard, ListFilter, Trash2, CheckCircle, 
   Settings, HelpCircle, FileText, ArrowRight, Plus, Eye,
@@ -40,6 +41,7 @@ export default function ImportView() {
   const [hasHeaders, setHasHeaders] = useState(true);
   const [showMappingStep, setShowMappingStep] = useState(false);
   const [amountMode, setAmountMode] = useState<'single' | 'separate'>('single');
+  const [importSafetyNotice, setImportSafetyNotice] = useState('');
 
   const handleAmountModeChange = (mode: 'single' | 'separate') => {
     setAmountMode(mode);
@@ -153,6 +155,7 @@ export default function ImportView() {
     setMissingCPList([]);
     setMissingCatList([]);
     setPendingRowsForResolution([]);
+    setImportSafetyNotice('');
   };
 
   // Sample templates to load for quick user testing
@@ -203,12 +206,22 @@ export default function ImportView() {
   const handleParseData = (textToParse: string) => {
     if (!textToParse.trim()) return;
     
-    const lines = textToParse
-      .split('\n')
-      .map(line => {
-        return line.split(',').map(cell => cell.replace(/^["']|["']$/g, '').trim());
-      })
-      .filter(cells => cells.length > 1 && cells.some(c => c !== ''));
+    const prepared = prepareCsvImport(textToParse);
+    const { rows: lines, inconsistentRowIndexes } = prepared;
+    if (inconsistentRowIndexes.length > 0) {
+      setParsedLines([]);
+      setShowMappingStep(false);
+      alert(`CSV parsing stopped: ${inconsistentRowIndexes.length} row(s) have a different number of columns than the header.`);
+      return;
+    }
+    if (prepared.profile === 'cash_app') {
+      setRawText(prepared.csvText);
+      setImportSafetyNotice(
+        `Cash App export detected. ${prepared.excludedFailedRows} failed/pending row(s) and ${prepared.excludedNonTransactionRows} zero-dollar notification row(s) were excluded before mapping. ${Math.max(lines.length - 1, 0)} completed transactions remain for review.`,
+      );
+    } else {
+      setImportSafetyNotice('');
+    }
 
     if (lines.length > 0) {
       setParsedLines(lines);
@@ -264,7 +277,19 @@ export default function ImportView() {
         }
       });
       
-      setColumnMappings(initialMappings);
+      if (prepared.profile === 'cash_app') {
+        setAmountMode('single');
+        setColumnMappings({
+          0: ['date'],
+          2: ['tags'],
+          5: ['amount'],
+          7: ['description', 'memo'],
+          8: ['counterparty'],
+          9: ['description', 'memo'],
+        });
+      } else {
+        setColumnMappings(initialMappings);
+      }
     }
   };
 
@@ -892,6 +917,12 @@ export default function ImportView() {
             </div>
 
             {/* AMOUNT COLUMN MODE SELECTOR & HEADER TOGGLE */}
+            {importSafetyNotice && (
+              <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-xs text-amber-200 flex items-start gap-2">
+                <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                <span>{importSafetyNotice}</span>
+              </div>
+            )}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900/30 p-4 rounded-xl border border-zinc-800/60">
               <div className="space-y-1">
                 <span className="text-[10px] uppercase font-bold text-zinc-400 font-mono tracking-wider block">Amount Column Structure</span>
