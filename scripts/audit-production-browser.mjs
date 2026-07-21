@@ -1,6 +1,9 @@
 import { chromium } from '../app/qifinance-web/node_modules/@playwright/test/index.mjs';
 import { writeFile } from 'node:fs/promises';
 
+const recordStage = message => writeFile('browser-audit-result.txt', message.slice(0, 130), 'utf8');
+await recordStage('Audit started; validating secret configuration.');
+
 const required = ['QIFI_SUPABASE_URL', 'QIFI_SUPABASE_PUBLISHABLE_KEY', 'QIFI_SMOKE_EMAIL', 'QIFI_SMOKE_PASSWORD'];
 for (const name of required) {
   if (!process.env[name]) throw new Error(`Missing required environment variable: ${name}`);
@@ -17,6 +20,7 @@ const authResponse = await fetch(`${process.env.QIFI_SUPABASE_URL}/auth/v1/token
 if (!authResponse.ok) throw new Error(`Smoke-user authentication failed (${authResponse.status}).`);
 const { access_token: accessToken } = await authResponse.json();
 if (!accessToken) throw new Error('Smoke-user authentication returned no access token.');
+await recordStage('Smoke-user authentication succeeded; launching Chromium.');
 
 const viewports = [
   { name: 'mobile-320', width: 320, height: 720 },
@@ -29,9 +33,11 @@ const viewports = [
 const routes = ['/dashboard', '/transactions', '/transactions/new', '/reports', '/reconciliation', '/evidence'];
 const failures = [];
 const browser = await chromium.launch();
+await recordStage('Chromium launched; starting required viewport audit.');
 
 try {
   for (const viewport of viewports) {
+    await recordStage(`${viewport.name}: opening production login.`);
     const context = await browser.newContext({ viewport });
     const page = await context.newPage();
     const runtimeErrors = [];
@@ -49,8 +55,10 @@ try {
     await page.locator('#qifi-passphrase').fill(accessToken);
     await page.getByRole('button', { name: 'Unlock', exact: true }).click();
     await page.getByText('Dashboard / Forecast', { exact: true }).first().waitFor({ timeout: 20_000 });
+    await recordStage(`${viewport.name}: authenticated; auditing routes.`);
 
     for (const route of routes) {
+      await recordStage(`${viewport.name}: auditing ${route}.`);
       await page.goto(`https://fi.qially.com/#${route}`, { waitUntil: 'networkidle' });
       await page.waitForTimeout(250);
       const layout = await page.evaluate(() => ({
@@ -68,6 +76,7 @@ try {
   }
 
   const pwaContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await recordStage('Viewport routes passed; auditing production PWA control.');
   const pwaPage = await pwaContext.newPage();
   await pwaPage.goto('https://fi.qially.com/', { waitUntil: 'networkidle' });
   await pwaPage.reload({ waitUntil: 'networkidle' });
