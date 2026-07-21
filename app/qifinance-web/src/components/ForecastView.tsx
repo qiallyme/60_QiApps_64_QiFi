@@ -7,6 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { useQiStore } from '../store';
 import { RecurringSchedule } from '../types';
 import TransactionForm from './TransactionForm';
+import { formatLocalDate, recurringOccurrences } from '../lib/financeMath';
 import { 
   Calendar, CreditCard, ArrowUpRight, ArrowDownLeft, Plus, 
   Trash2, ToggleLeft, ToggleRight, DollarSign, TrendingUp, Sparkles, X, PlusCircle,
@@ -52,6 +53,7 @@ export default function ForecastView() {
     addAttachment,
     financialAccounts,
     transactions,
+    ledgerEntries,
     rawRows,
     obligations,
     isLoading,
@@ -402,9 +404,10 @@ export default function ForecastView() {
   const currentCheckingBalance = useMemo(() => {
     const financial = financialAccounts.find(account => account.id === forecastAccountId);
     if (!financial) return 0;
-    const calculatedBalance = getAccountBalance(financial.defaultLedgerAccountId || financial.id);
-    return calculatedBalance !== 0 ? calculatedBalance : Number(financial.currentBalance || 0);
-  }, [financialAccounts, forecastAccountId, getAccountBalance]);
+    const ledgerAccountId = financial.defaultLedgerAccountId || financial.id;
+    const hasLedgerBalance = ledgerEntries.some(entry => entry.accountId === ledgerAccountId);
+    return hasLedgerBalance ? getAccountBalance(ledgerAccountId) : Number(financial.currentBalance || 0);
+  }, [financialAccounts, forecastAccountId, getAccountBalance, ledgerEntries]);
 
   const dashboardSummary = useMemo(() => {
     const now = new Date();
@@ -436,35 +439,11 @@ export default function ForecastView() {
     const days90Limit = new Date(today);
     days90Limit.setDate(days90Limit.getDate() + 90);
 
-    // Occurrences mapper
-    const getOccurrences = (sched: RecurringSchedule, limit: Date) => {
-      let occDate = new Date(sched.nextDueDate);
-      const list: { date: Date; sched: RecurringSchedule }[] = [];
-      
-      // Safety bounds to prevent infinite loops
-      let iterations = 0;
-      while (occDate <= limit && iterations < 100) {
-        iterations++;
-        list.push({ date: new Date(occDate), sched });
-        
-        if (sched.frequency === 'weekly') {
-          occDate.setDate(occDate.getDate() + 7);
-        } else if (sched.frequency === 'monthly') {
-          occDate.setMonth(occDate.getMonth() + 1);
-        } else if (sched.frequency === 'quarterly') {
-          occDate.setMonth(occDate.getMonth() + 3);
-        } else if (sched.frequency === 'yearly') {
-          occDate.setFullYear(occDate.getFullYear() + 1);
-        } else {
-          break;
-        }
-      }
-      return list;
-    };
-
     // Flatten all active checking occurrences
     const activeCheckingSchedules = schedules.filter(s => s.isActive && s.sourceAccountId === forecastAccountId);
-    const allOccurrences = activeCheckingSchedules.flatMap(s => getOccurrences(s, days90Limit));
+    const allOccurrences = activeCheckingSchedules.flatMap(s =>
+      recurringOccurrences(s, days90Limit).map(date => ({ date, sched: s })),
+    );
 
     // Sort chronologically
     allOccurrences.sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -484,7 +463,7 @@ export default function ForecastView() {
       const catName = accounts.find(a => a.id === occ.sched.accountId)?.name || 'Transfer';
       
       timelineSteps.push({
-        date: occ.date.toISOString().split('T')[0],
+        date: formatLocalDate(occ.date),
         name: occ.sched.name,
         amount: occ.sched.amount,
         balance: runningCheckingBalance,

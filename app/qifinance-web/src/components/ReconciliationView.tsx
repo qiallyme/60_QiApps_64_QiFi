@@ -8,6 +8,7 @@ import { useQiStore } from '../store';
 import SearchableAccountSelect from './SearchableAccountSelect';
 import { Statement, Transaction, Attachment } from '../types';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
+import { formatLocalDate } from '../lib/financeMath';
 import { 
   CheckCircle, AlertCircle, Calendar, Plus, Trash2, 
   ArrowRight, ShieldAlert, CheckSquare, Square, DollarSign,
@@ -15,6 +16,9 @@ import {
 } from 'lucide-react';
 
 export default function ReconciliationView() {
+  const today = new Date();
+  const currentMonthStart = formatLocalDate(new Date(today.getFullYear(), today.getMonth(), 1));
+  const currentMonthEnd = formatLocalDate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
   const { 
     statements, 
     transactions, 
@@ -38,8 +42,8 @@ export default function ReconciliationView() {
   // New statement form state
   const [showAddForm, setShowAddForm] = useState(false);
   const [stmtAccount, setStmtAccount] = useState('');
-  const [stmtStart, setStmtStart] = useState('2026-06-01');
-  const [stmtEnd, setStmtEnd] = useState('2026-06-30');
+  const [stmtStart, setStmtStart] = useState(currentMonthStart);
+  const [stmtEnd, setStmtEnd] = useState(currentMonthEnd);
   const [stmtOpening, setStmtOpening] = useState('0.00');
   const [stmtClosing, setStmtClosing] = useState('');
 

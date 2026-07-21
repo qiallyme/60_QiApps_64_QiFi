@@ -7,6 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { useQiStore } from '../store';
 import { Transaction, Attachment } from '../types';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
+import { reconcileLedger } from '../lib/financeMath';
 import { 
   TrendingUp, ArrowUpRight, ArrowDownLeft, Calendar, FileText, 
   Percent, Wallet, CheckCircle, ShieldAlert, Sparkles, PieChart,
@@ -33,6 +34,11 @@ export default function ReportsView() {
   const [filterTag, setFilterTag] = useState('all');
   const [filterMinAmount, setFilterMinAmount] = useState('');
   const [filterMaxAmount, setFilterMaxAmount] = useState('');
+
+  const reconciliation = useMemo(
+    () => reconcileLedger(transactions, ledgerEntries),
+    [transactions, ledgerEntries],
+  );
 
   // 1. STANDARD INCOME STATEMENT (P&L) FOR BUSINESS
   const pnlReport = useMemo(() => {
@@ -239,6 +245,24 @@ export default function ReportsView() {
 
   return (
     <div className="space-y-6">
+      <section className={`rounded-xl border p-4 ${reconciliation.isReconciled ? 'border-emerald-200 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
+        <div className="flex items-start gap-3">
+          {reconciliation.isReconciled ? <CheckCircle className="mt-0.5 h-5 w-5 text-emerald-700" /> : <ShieldAlert className="mt-0.5 h-5 w-5 text-amber-700" />}
+          <div>
+            <h2 className="font-semibold text-slate-900">
+              {reconciliation.isReconciled ? 'Source ledger reconciled' : 'Source ledger requires review'}
+            </h2>
+            <p className="mt-1 text-sm text-slate-700">
+              Debits ${reconciliation.totalDebits.toFixed(2)} · Credits ${reconciliation.totalCredits.toFixed(2)} · Difference ${reconciliation.difference.toFixed(2)}
+            </p>
+            {!reconciliation.isReconciled && (
+              <p className="mt-1 text-sm text-amber-800">
+                {reconciliation.imbalancedJournalCount} imbalanced journal(s), {reconciliation.transactionsWithoutLedgerEntries} transaction(s) without ledger entries, and {reconciliation.orphanLedgerEntryCount} orphan ledger entry/entries.
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
       
       {/* Header */}
       <div>

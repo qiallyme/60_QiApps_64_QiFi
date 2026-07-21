@@ -10,6 +10,7 @@ import {
   Counterparty, AccountabilityObligation
 } from './types';
 import { QiFinanceAuthError, qifinanceApi } from './lib/qifinanceApi';
+import { accountBalanceFromEntries } from './lib/financeMath';
 
 interface QiContextType {
   financialAccounts: FinancialAccount[];
@@ -727,26 +728,11 @@ export const QiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   // Helper: Get running balance of an account
   const getAccountBalance = (accountId: string): number => {
-    let balance = 0;
     const financialAccount = financialAccounts.find(a => a.id === accountId);
     const ledgerAccountId = financialAccount?.defaultLedgerAccountId || accountId;
     const account = accounts.find(a => a.id === ledgerAccountId);
     if (!account) return 0;
-
-    // sum ledger items
-    ledgerEntries.forEach(entry => {
-      if (entry.accountId === ledgerAccountId) {
-        if (['asset', 'expense', 'clearing', 'suspense'].includes(account.type)) {
-          // debits increase, credits decrease
-          balance += entry.debit - entry.credit;
-        } else {
-          // liabilities, equity, revenue: credits increase, debits decrease
-          balance += entry.credit - entry.debit;
-        }
-      }
-    });
-
-    return balance;
+    return accountBalanceFromEntries(account, ledgerEntries);
   };
 
   // -------------------------

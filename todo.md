@@ -1,6 +1,6 @@
 # QiFi Launch Closure Ledger
 
-Updated 2026-07-18. This document supersedes the reopened follow-up checklist. Every previously unchecked requirement is classified exactly once below. Historical duplicates and obsolete architecture warnings are retained only in the audit table, not as active work.
+Updated 2026-07-21. This document supersedes the reopened follow-up checklist. Every previously unchecked requirement is classified exactly once below. Historical duplicates and obsolete architecture warnings are retained only in the audit table, not as active work.
 
 ## Classification rules
 
@@ -27,6 +27,7 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 - `E14` Production Worker secret inventory now includes `OPENAI_API_KEY`, and both `api.qially.com/health/ai` and the workers.dev deployment return 200 with `configured: true` without exposing the value. Secret-change version: `70ac4d90-7c40-42e2-bc1e-eefccf71b258`.
 - `E15` GitHub Actions production smoke run `29773236575` (job `88456329199`) passed on commit `0602a73`. It validated all four repository secrets, acquired a dedicated Supabase user session, received the complete authenticated finance state with populated transaction dropdown sources, and confirmed unauthenticated state returns 401. This test is read-only until workspace isolation is implemented.
 - `E16` QiApi commit `0a5e581` and QiFi commit `63aff9e` implement schedule edit, pause/resume, deterministic occurrence generation, delete, refresh, and retry duplicate prevention. QiFi TypeScript/build passed; QiApi TypeScript, ESLint, 37 tests, and dry-run passed. Worker version `658570cc-45e0-4ce7-8a27-530ddf46159d` is deployed; production generation CORS returns 204 and unauthenticated access returns 401. Authenticated production lifecycle mutation remains open until smoke-workspace isolation exists.
+- `E17` QiFi centralizes account balances, calendar-safe forecast occurrences, and source-ledger integrity checks in `financeMath.ts`. Four focused tests pass for debit-normal balances, balanced journals, missing/orphan mappings, and month-end recurrence; TypeScript and the production build pass. Reports now show debit/credit reconciliation status, forecasts preserve legitimate zero ledger balances, and runtime report/reconciliation dates derive from the current date. Authenticated production mutation/reconciliation proof remains open.
 
 ## Closure audit of every formerly unchecked item
 
@@ -81,7 +82,7 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 | TX-08 | Convert direction to correct signed/debit/credit values | COMPLETE_AND_VERIFIED | Money In/Out journal assertions pass. E11 |
 | TX-09 | Verify sign logic is not reversed | COMPLETE_AND_VERIFIED | Signed direction and balanced debit/credit tests pass. E11 |
 | TX-10 | Verify asset/liability/equity/revenue/expense behavior | ACTUALLY_INCOMPLETE | Needs accounting test matrix and any resulting fixes. Phase 2. |
-| TX-11 | Prevent double counting transaction and journal rows | COMPLETE_BUT_NEEDS_VERIFICATION | Projection uses journal entries, but reconciliation test is missing. |
+| TX-11 | Prevent double counting transaction and journal rows | COMPLETE_BUT_NEEDS_VERIFICATION | Shared journal calculations and reconciliation tests pass; production mutation proof remains. E17 |
 | TX-12 | Separate simple cash entry from advanced journal entry | ACTUALLY_INCOMPLETE | No explicit advanced journal workflow. Phase 2 after launch-normal flow. |
 | TX-13 | Existing attachments visible/manageable while editing | COMPLETE_AND_VERIFIED | Shared form filters transaction attachments and supports preview/delete/upload. E6 |
 | TX-14 | Receipt camera/upload, storage, OCR, review, form mapping | COMPLETE_BUT_NEEDS_VERIFICATION | Camera/upload, shared attachment list, Worker OCR routes, confidence review, and explicit form mapping are implemented and locally verified; authenticated production OCR remains open. E12 |
@@ -112,9 +113,9 @@ Updated 2026-07-18. This document supersedes the reopened follow-up checklist. E
 | REPORT-03 | Date filters affect every report | COMPLETE_BUT_NEEDS_VERIFICATION | Needs report matrix. |
 | REPORT-04 | Account filters affect every report | COMPLETE_BUT_NEEDS_VERIFICATION | Needs report matrix. |
 | REPORT-05 | Recalculate after all listed mutation types | COMPLETE_BUT_NEEDS_VERIFICATION | Central refresh exists; assertions missing. |
-| REPORT-06 | Totals reconcile to general ledger | ACTUALLY_INCOMPLETE | No automated reconciliation suite. Phase 4. |
+| REPORT-06 | Totals reconcile to general ledger | COMPLETE_BUT_NEEDS_VERIFICATION | Automated source-ledger reconciliation covers balanced journals plus missing/orphan mappings and is visible in Reports; authenticated production mutation proof remains. E17 |
 | REPORT-07 | Visible last-updated/refresh state | COMPLETE_AND_VERIFIED | Dashboard/forecast show update state. |
-| REPORT-08 | Remove hardcoded/demo/stale report values | ACTUALLY_INCOMPLETE | Ledger still contains fixed 2026 date anchors and demo-oriented logic; full scan/fix required. Phase 4. |
+| REPORT-08 | Remove hardcoded/demo/stale report values | COMPLETE_AND_VERIFIED | Fixed runtime Ledger and Reconciliation date anchors were replaced with current calendar values; forecast zero-balance fallback was corrected. Explicit sample-import/reset fixtures remain intentionally labeled sample data. E17 |
 
 ### UI, responsive behavior, and PWA
 
@@ -192,9 +193,10 @@ Only incomplete implementation and required verification remain here. Phases are
 
 ### Phase 4 - Report and forecast reconciliation
 
-- [ ] Remove fixed dates, demo anchors, placeholders, and stale calculations (`REPORT-08`).
+- [x] Remove fixed runtime dates, demo anchors, placeholders, and stale calculations (`REPORT-08`). Evidence: E17.
 - [ ] Build a report/filter/mutation test matrix (`REPORT-01` through `REPORT-05`).
-- [ ] Reconcile report and forecast totals to source transactions and journal lines (`REPORT-06`).
+- [x] Add local report/forecast reconciliation calculations and tests against source transactions and journal lines (`REPORT-06`). Evidence: E17.
+- [ ] Run authenticated production mutation/reconciliation assertions for reports and forecasts (`REPORT-01` through `REPORT-06`).
 
 ### Phase 5 - UI, required viewports, and installed PWA
 

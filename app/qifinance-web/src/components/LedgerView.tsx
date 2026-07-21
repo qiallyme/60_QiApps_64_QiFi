@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import TransactionForm from './TransactionForm';
+import { formatLocalDate, parseLocalDate, recurringOccurrences } from '../lib/financeMath';
 
 export default function LedgerView() {
   const { 
@@ -187,26 +188,12 @@ export default function LedgerView() {
       const days90 = projectDate(90);
 
       // We can generate schedules occurrences
-      const calculateOccurrences = (schedDueDate: string, freq: string, limitDate: Date) => {
-        let occDate = new Date(schedDueDate);
-        const dates: Date[] = [];
-        while (occDate <= limitDate) {
-          dates.push(new Date(occDate));
-          if (freq === 'weekly') occDate.setDate(occDate.getDate() + 7);
-          else if (freq === 'monthly') occDate.setMonth(occDate.getMonth() + 1);
-          else if (freq === 'quarterly') occDate.setMonth(occDate.getMonth() + 3);
-          else if (freq === 'yearly') occDate.setFullYear(occDate.getFullYear() + 1);
-          else break;
-        }
-        return dates;
-      };
-
       const billForecast = schedules.filter(s => s.amount < 0 && s.isActive).flatMap(sched => {
-        const occurrences = calculateOccurrences(sched.nextDueDate, sched.frequency, days90);
+        const occurrences = recurringOccurrences(sched, days90);
         return occurrences.map(date => ({
           name: sched.name,
           amount: sched.amount,
-          date: date.toISOString().split('T')[0],
+          date: formatLocalDate(date),
           account: accounts.find(a => a.id === sched.accountId)?.name || 'Expense',
           source: accounts.find(a => a.id === sched.sourceAccountId)?.name || 'Checking',
           daysAway: Math.ceil((date.getTime() - today.getTime()) / (1000 * 3600 * 24))
@@ -234,8 +221,9 @@ export default function LedgerView() {
 
     if (activeQuickQuery === 'account-changes-month') {
       // "What accounts changed this month?"
-      // Let's analyze transactions of the current month (June 2026 based on timestamp)
-      const curMonth = '2026-06';
+      const now = new Date();
+      const curMonth = formatLocalDate(now).slice(0, 7);
+      const currentMonthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       const monthLedgers = ledgerEntries.filter(le => le.date.startsWith(curMonth));
       
       const changes = accounts.map(acc => {
@@ -256,7 +244,7 @@ export default function LedgerView() {
       }).filter(c => Math.abs(c.change) > 0.01);
 
       return {
-        title: "Account Balance Velocity (This Month - June 2026)",
+        title: `Account Balance Velocity (This Month - ${currentMonthLabel})`,
         summary: `A snapshot of ledger activity showing net increases or decreases across accounts for the current cycle.`,
         changes: changes
       };
@@ -304,12 +292,14 @@ export default function LedgerView() {
         if (filterEvidence === 'no' && hasAttach) return false;
       }
 
-      // 6. Date Range filter (using 2026-06-30 as "current" anchor)
+      // 6. Date Range filter relative to today.
       if (filterDateRange !== 'all') {
-        const txDate = new Date(t.date);
-        const anchor = new Date('2026-06-30');
+        const txDate = parseLocalDate(t.date);
+        const anchor = new Date();
+        anchor.setHours(0, 0, 0, 0);
         const diffMs = anchor.getTime() - txDate.getTime();
         const diffDays = Math.ceil(diffMs / (1000 * 3600 * 24));
+        if (diffDays < 0) return false;
         if (filterDateRange === '30' && diffDays > 30) return false;
         if (filterDateRange === '90' && diffDays > 90) return false;
       }
