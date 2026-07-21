@@ -28,6 +28,7 @@ Updated 2026-07-21. This document supersedes the reopened follow-up checklist. E
 - `E15` GitHub Actions production smoke run `29773236575` (job `88456329199`) passed on commit `0602a73`. It validated all four repository secrets, acquired a dedicated Supabase user session, received the complete authenticated finance state with populated transaction dropdown sources, and confirmed unauthenticated state returns 401. This test is read-only until workspace isolation is implemented.
 - `E16` QiApi commit `0a5e581` and QiFi commit `63aff9e` implement schedule edit, pause/resume, deterministic occurrence generation, delete, refresh, and retry duplicate prevention. QiFi TypeScript/build passed; QiApi TypeScript, ESLint, 37 tests, and dry-run passed. Worker version `658570cc-45e0-4ce7-8a27-530ddf46159d` is deployed; production generation CORS returns 204 and unauthenticated access returns 401. Authenticated production lifecycle mutation remains open until smoke-workspace isolation exists.
 - `E17` QiFi centralizes account balances, calendar-safe forecast occurrences, and source-ledger integrity checks in `financeMath.ts`. Four focused tests pass for debit-normal balances, balanced journals, missing/orphan mappings, and month-end recurrence; TypeScript and the production build pass. Reports now show debit/credit reconciliation status, forecasts preserve legitimate zero ledger balances, and runtime report/reconciliation dates derive from the current date. Authenticated production mutation/reconciliation proof remains open.
+- `E18` GitHub Actions production browser run `29805896246` passed on commit `f3e6398`. Using the dedicated authenticated smoke identity, it exercised dashboard, transaction list/create, reports, reconciliation, and evidence at 320, 375, 390, 430, 768, and 1440 pixels (36 route/viewport combinations), asserted no page-level horizontal overflow, and found no browser console, page, or unexplained network failures. It also verified the live manifest metadata/icons and an active service worker controlling the page. This does not replace remaining interaction/screenshot checks or a real installed-standalone launch.
 
 ## Closure audit of every formerly unchecked item
 
@@ -132,7 +133,7 @@ Updated 2026-07-21. This document supersedes the reopened follow-up checklist. E
 | UI-09 | Theme/accent consistency | COMPLETE_BUT_NEEDS_VERIFICATION | Global theme exists; visual sweep missing. |
 | UI-10 | Remove hardcoded theme colors | ACTUALLY_INCOMPLETE | Numerous hardcoded zinc/black/emerald combinations remain. Phase 5. |
 | MOB-01 | Every screen usable on mobile | COMPLETE_BUT_NEEDS_VERIFICATION | Responsive code exists; required viewport evidence missing. |
-| MOB-02 | Test 320/375/390/430/tablet/desktop | ACTUALLY_INCOMPLETE | Phase 5 automated screenshots/interactions. |
+| MOB-02 | Test 320/375/390/430/tablet/desktop | COMPLETE_AND_VERIFIED | Authenticated automated production audit passed all six required widths across six launch-critical routes. E18 |
 | MOB-03 | No horizontal page scroll | COMPLETE_BUT_NEEDS_VERIFICATION | Needs viewport audit. |
 | MOB-04 | Responsive wide tables | COMPLETE_BUT_NEEDS_VERIFICATION | Several wrappers/card modes exist; full screen audit missing. |
 | MOB-05 | Adequate touch targets | COMPLETE_BUT_NEEDS_VERIFICATION | Needs mobile audit. |
@@ -148,7 +149,7 @@ Updated 2026-07-21. This document supersedes the reopened follow-up checklist. E
 |---|---|---|---|
 | VER-01 | Run against configured production Supabase | COMPLETE_AND_VERIFIED | E2-E4 |
 | VER-02 | Create, refresh, sign out/in, restart persistence test | ACTUALLY_INCOMPLETE | Phase 6/7. |
-| VER-03 | Browser console/network audit | ACTUALLY_INCOMPLETE | Phase 6. |
+| VER-03 | Browser console/network audit | COMPLETE_AND_VERIFIED | Authenticated production browser audit found no console, page, or unexplained request failures across 36 route/viewport combinations. E18 |
 | VER-04 | No critical localStorage financial dependency | COMPLETE_AND_VERIFIED | E7 |
 | VER-05 | Document root cause of each major defect | COMPLETE_BUT_NEEDS_VERIFICATION | API/CORS/RLS root causes recorded; future defects must be added as found. |
 | VER-06 | Record changed files | COMPLETE_AND_VERIFIED | Git commits provide durable file lists. |
@@ -201,13 +202,14 @@ Only incomplete implementation and required verification remain here. Phases are
 ### Phase 5 - UI, required viewports, and installed PWA
 
 - [ ] Complete shared UI primitives and eliminate remaining inconsistent/hardcoded styling (`UI-01` through `UI-10`).
-- [ ] Run screenshot and interaction tests at 320, 375, 390, 430, tablet, and desktop widths (`MOB-01` through `MOB-09`).
+- [x] Run automated authenticated overflow/error tests at 320, 375, 390, 430, tablet, and desktop widths. Evidence: E18.
+- [ ] Run remaining screenshot and interaction checks for touch targets, forms, modals, navigation, and charts (`MOB-01`, `MOB-04` through `MOB-09`).
 - [ ] Fix every overflow, overlap, clipping, touch-target, form-action, and modal defect found.
 - [ ] Install and test the production PWA in standalone mode, including refresh/update recovery (`MOB-10`).
 
 ### Phase 6 - Production observability and automated smoke suite
 
-- [ ] Capture production console and network logs; resolve every unexplained error (`VER-03`).
+- [x] Capture production console and network results and fail on every unexplained error (`VER-03`). Evidence: E18.
 - [ ] Run automated authenticated smoke tests after Worker and Pages deployments.
 - [ ] Store evidence artifacts and fail deployment when critical assertions fail.
 
