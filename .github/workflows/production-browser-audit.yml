@@ -1,0 +1,50 @@
+name: Production browser audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/production-browser-audit.yml"
+      - "scripts/audit-production-browser.mjs"
+      - "app/qifinance-web/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qifi-production-browser-audit
+  cancel-in-progress: false
+
+jobs:
+  authenticated-browser:
+    name: Authenticated mobile and PWA audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app/qifinance-web
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/qifinance-web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Audit production viewports and PWA
+        env:
+          QIFI_SUPABASE_URL: ${{ secrets.QIFI_SUPABASE_URL }}
+          QIFI_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.QIFI_SUPABASE_PUBLISHABLE_KEY }}
+          QIFI_SMOKE_EMAIL: ${{ secrets.QIFI_SMOKE_EMAIL }}
+          QIFI_SMOKE_PASSWORD: ${{ secrets.QIFI_SMOKE_PASSWORD }}
+        run: npm run audit:production-browser
