@@ -7,8 +7,10 @@ import React from 'react';
 import { Building2, Plus, WalletCards } from 'lucide-react';
 import { qifinanceApi } from '../lib/qifinanceApi';
 import { useQiStore } from '../store';
+import { useNavigate } from 'react-router-dom';
 
 export default function FinancialAccountsView() {
+  const navigate = useNavigate();
   const { financialAccounts, accounts, refreshData } = useQiStore();
   const [name, setName] = React.useState('');
   const [institution, setInstitution] = React.useState('');
@@ -100,7 +102,7 @@ export default function FinancialAccountsView() {
         {financialAccounts.map(account => {
           const defaultLedger = accounts.find(item => item.id === account.defaultLedgerAccountId);
           return (
-            <div key={account.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 space-y-3">
+            <button type="button" key={account.id} onClick={() => navigate(`/transactions?financialAccountId=${encodeURIComponent(account.id)}`)} className="text-left bg-zinc-900/50 hover:bg-zinc-900/80 hover:border-emerald-500/40 border border-zinc-800 rounded-xl p-4 space-y-3 transition-colors">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-sm font-bold text-white">{account.name}</div>
@@ -112,7 +114,8 @@ export default function FinancialAccountsView() {
               <div className="text-[11px] text-zinc-500 border-t border-zinc-800 pt-3">
                 Default ledger: <span className="text-zinc-300">{defaultLedger ? `${defaultLedger.code} ${defaultLedger.name}` : 'Unmapped'}</span>
               </div>
-            </div>
+              <div className="text-[11px] font-semibold text-emerald-400">View ledger, edit transactions, and reconcile →</div>
+            </button>
           );
         })}
       </div>

@@ -236,6 +236,20 @@ export interface TransactionSplit {
   description?: string;
 }
 
+export type CounterpartyAllocationTreatment = 'shared' | 'gift' | 'iou';
+
+export interface TransactionAllocation {
+  id: string;
+  transactionId: string;
+  counterpartyId: string;
+  amount: number;
+  treatment: CounterpartyAllocationTreatment;
+  note: string;
+  obligationId?: string | null;
+}
+
+export type TransactionAllocationInput = Omit<TransactionAllocation, 'id' | 'transactionId' | 'obligationId'>;
+
 export interface AiSuggestionMetadata {
   confidenceScore: number;
   suggestedAccountId: string;

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Camera, DollarSign, Eye, Loader2, Paperclip, ReceiptText, Trash2, Upload } from 'lucide-react';
+import { Camera, DollarSign, Eye, Loader2, Paperclip, Plus, ReceiptText, Trash2, Upload, Users } from 'lucide-react';
 import { useQiStore } from '../store';
-import { Attachment, ReceiptExtraction, Transaction } from '../types';
+import { Attachment, ReceiptExtraction, Transaction, TransactionAllocationInput } from '../types';
 import { qifinanceApi } from '../lib/qifinanceApi';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
 import SearchableAccountSelect from './SearchableAccountSelect';
@@ -51,6 +51,8 @@ export default function TransactionForm({ transaction, categoryAccountId, onCanc
   const [receiptProposal, setReceiptProposal] = useState<ReceiptExtraction | null>(null);
   const [receiptProposalApplied, setReceiptProposalApplied] = useState(false);
   const [error, setError] = useState('');
+  const [allocations, setAllocations] = useState<TransactionAllocationInput[]>([]);
+  const [allocationsLoading, setAllocationsLoading] = useState(false);
 
   useEffect(() => {
     if (!sourceAccountId && financialAccounts[0]) setSourceAccountId(financialAccounts[0].id);
@@ -72,6 +74,25 @@ export default function TransactionForm({ transaction, categoryAccountId, onCanc
     setReceiptProposalApplied(false);
     setError('');
   }, [transaction?.id, categoryAccountId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAllocations([]);
+    if (!transaction?.id) return () => { cancelled = true; };
+    setAllocationsLoading(true);
+    void qifinanceApi.getTransactionAllocations(transaction.id)
+      .then((rows) => {
+        if (!cancelled) setAllocations(rows.map((row) => ({
+          counterpartyId: row.counterparty_id || row.counterpartyId,
+          amount: Number(row.amount),
+          treatment: row.treatment,
+          note: row.note || '',
+        })));
+      })
+      .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Could not load transaction splits.'); })
+      .finally(() => { if (!cancelled) setAllocationsLoading(false); });
+    return () => { cancelled = true; };
+  }, [transaction?.id]);
 
   const savedAttachments = useMemo(
     () => transaction ? attachments.filter((attachment) => attachment.transactionId === transaction.id) : [],
@@ -151,6 +172,11 @@ export default function TransactionForm({ transaction, categoryAccountId, onCanc
       setError('Date, positive amount, description, financial account, and category are required.');
       return;
     }
+    const allocatedTotal = allocations.reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0);
+    if (allocations.some((allocation) => !allocation.counterpartyId || allocation.amount <= 0) || allocatedTotal > Number(amount) + 0.005) {
+      setError('Every split needs a person and positive amount, and split amounts cannot exceed the transaction total.');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
@@ -180,6 +206,7 @@ export default function TransactionForm({ transaction, categoryAccountId, onCanc
         saved = await addManualTransaction(values, categoryId);
       }
       if (!saved) throw new Error('The transaction was not saved.');
+      await qifinanceApi.replaceTransactionAllocations(saved.id, allocations);
       for (const attachment of pendingAttachments) {
         await addAttachment(saved.id, attachment.fileName, attachment.fileType, attachment.dataUrl, attachment.kind === 'receipt' ? 'Receipt captured from transaction form' : 'Evidence uploaded from transaction form');
       }
@@ -209,6 +236,21 @@ export default function TransactionForm({ transaction, categoryAccountId, onCanc
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <label className="text-xs font-semibold text-zinc-400">Bank Account / Card<select value={sourceAccountId} onChange={(e) => setSourceAccountId(e.target.value)} className="mt-1 w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100"><option value="">Select account</option>{financialAccounts.map((account) => <option key={account.id} value={account.id}>{account.institution ? `(${account.institution}) ` : ''}{account.name}</option>)}</select></label>
         <div><label className="block text-xs font-semibold text-zinc-400 mb-1">Category</label><SearchableAccountSelect value={categoryId} onChange={setCategoryId} accounts={categoryAccounts} placeholder="Search category by code or name"/></div>
+      </div>
+      <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div><p className="flex items-center gap-2 text-xs font-semibold text-zinc-200"><Users size={14}/>Split with people</p><p className="text-[10px] text-zinc-500">Track a shared purchase, mark it as a gift, or add an IOU to what they owe you. No extra cash transaction is created.</p></div>
+          <button type="button" onClick={() => setAllocations((current) => [...current, { counterpartyId: '', amount: 0, treatment: 'shared', note: '' }])} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-zinc-800 px-3 py-2 text-xs text-zinc-200"><Plus size={12}/>Add split</button>
+        </div>
+        {allocationsLoading && <p className="text-xs text-zinc-500">Loading saved splits…</p>}
+        {allocations.map((allocation, index) => <div key={index} className="grid grid-cols-1 gap-2 rounded-lg border border-zinc-800 p-3 md:grid-cols-[1.3fr_.7fr_1fr_1.5fr_auto]">
+          <select aria-label={`Split ${index + 1} counterparty`} value={allocation.counterpartyId} onChange={(event) => setAllocations((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, counterpartyId: event.target.value } : item))} className="rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-2 text-xs text-zinc-200"><option value="">Choose person</option>{counterparties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+          <input aria-label={`Split ${index + 1} amount`} type="number" min="0.01" step="0.01" value={allocation.amount || ''} onChange={(event) => setAllocations((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, amount: Number(event.target.value) } : item))} placeholder="Amount" className="rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-2 text-xs text-zinc-200"/>
+          <select aria-label={`Split ${index + 1} treatment`} value={allocation.treatment} onChange={(event) => setAllocations((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, treatment: event.target.value as TransactionAllocationInput['treatment'] } : item))} className="rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-2 text-xs text-zinc-200"><option value="shared">Shared / track only</option><option value="iou">IOU — owes me</option><option value="gift">Gift — no debt</option></select>
+          <input aria-label={`Split ${index + 1} note`} value={allocation.note} onChange={(event) => setAllocations((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, note: event.target.value } : item))} placeholder="What was their portion?" className="rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-2 text-xs text-zinc-200"/>
+          <button type="button" aria-label={`Remove split ${index + 1}`} onClick={() => setAllocations((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg px-2 text-zinc-500 hover:text-rose-400"><Trash2 size={14}/></button>
+        </div>)}
+        {allocations.length > 0 && <div className="flex justify-end text-[11px] text-zinc-400">Allocated: <span className="ml-1 font-mono text-zinc-200">${allocations.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</span> / ${Number(amount || 0).toFixed(2)}</div>}
       </div>
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4 space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

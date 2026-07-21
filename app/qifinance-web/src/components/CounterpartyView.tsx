@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useQiStore } from '../store';
 import { Counterparty, AccountabilityObligation, Attachment, Transaction } from '../types';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
@@ -14,6 +14,7 @@ import {
   Upload, Eye, X, Check, LayoutGrid, Table
 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { qifinanceApi } from '../lib/qifinanceApi';
 
 export default function CounterpartyView() {
   const { id } = useParams<{ id?: string }>();
@@ -38,7 +39,18 @@ export default function CounterpartyView() {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [allocations, setAllocations] = useState<Array<{ id: string; transaction_id: string; amount: number; treatment: 'shared' | 'gift' | 'iou'; note: string }>>([]);
   const [listView, setListView] = useState<'cards' | 'table'>(() => (localStorage.getItem('qifi_counterparty_view') as 'cards' | 'table') || 'cards');
+
+  useEffect(() => {
+    let cancelled = false;
+    setAllocations([]);
+    if (!id) return () => { cancelled = true; };
+    void qifinanceApi.getCounterpartyAllocations(id).then((rows) => {
+      if (!cancelled) setAllocations(rows.map((row) => ({ ...row, amount: Number(row.amount) })));
+    }).catch(() => { if (!cancelled) setAllocations([]); });
+    return () => { cancelled = true; };
+  }, [id]);
   const [showAddForm, setShowAddForm] = useState(() => {
     return !!localStorage.getItem('qifi_draft_partner');
   });
@@ -724,6 +736,17 @@ export default function CounterpartyView() {
               )}
             </div>
           </div>
+
+          {allocations.length > 0 && <div className="bg-zinc-900/30 border border-zinc-800/80 p-5 rounded-2xl space-y-4 backdrop-blur-sm lg:col-span-2">
+            <div><h3 className="text-sm font-semibold text-zinc-100 flex items-center gap-1.5"><Users size={15} className="text-amber-400"/>Allocated purchases ({allocations.length})</h3><p className="text-xs text-zinc-500">Their share of purchases, including gifts and amounts added to their IOU.</p></div>
+            <div className="space-y-2">{allocations.map((allocation) => {
+              const transaction = transactions.find((item) => item.id === allocation.transaction_id);
+              return <div key={allocation.id} className="flex items-center justify-between gap-4 rounded-xl border border-zinc-800/60 bg-zinc-950/30 p-3">
+                <div className="min-w-0"><p className="truncate text-xs font-semibold text-zinc-200">{transaction?.description || allocation.note || 'Allocated purchase'}</p><p className="text-[10px] text-zinc-500">{transaction?.date || ''} · {allocation.treatment === 'iou' ? 'IOU — owes me' : allocation.treatment === 'gift' ? 'Gift — no debt' : 'Shared / tracking only'}</p></div>
+                <span className="shrink-0 font-mono text-xs font-bold text-amber-300">${allocation.amount.toFixed(2)}</span>
+              </div>;
+            })}</div>
+          </div>}
 
           {/* Partner Transaction Ledger History */}
           <div className="bg-zinc-900/30 border border-zinc-800/80 p-5 rounded-2xl space-y-4 backdrop-blur-sm lg:col-span-2">

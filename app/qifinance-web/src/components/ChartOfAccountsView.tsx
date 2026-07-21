@@ -5,8 +5,10 @@
 
 import React, { useState, useMemo, useRef } from 'react';
 import { useQiStore } from '../store';
+import { flattenAccountHierarchy } from '../lib/accountHierarchy';
 import { Account, AccountType, Attachment } from '../types';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
+import { Link } from 'react-router-dom';
 import { 
   Plus, Check, X, Shield, ArrowUpRight, ArrowDownLeft, 
   Layers, Heart, Database, Bookmark, PlusCircle, AlertCircle,
@@ -289,45 +291,14 @@ export default function ChartOfAccountsView() {
 
   // Group accounts with their nesting structure
   const groupedAccounts = useMemo(() => {
-    const activeAccs = accounts.filter(a => a.isActive);
-    
-    // Maps each account to its child accounts
-    const parentToChildren = new Map<string, Account[]>();
-    activeAccs.forEach(acc => {
-      if (acc.parentAccountId) {
-        const list = parentToChildren.get(acc.parentAccountId) || [];
-        list.push(acc);
-        parentToChildren.set(acc.parentAccountId, list);
-      }
-    });
-
-    const getNested = (type: AccountType) => {
-      const typeAccs = activeAccs.filter(a => a.type === type);
-      // Root accounts are those without parent, or parent doesn't exist/different type
-      const roots = typeAccs.filter(a => !a.parentAccountId || !typeAccs.some(p => p.id === a.parentAccountId));
-      
-      const result: { account: Account; depth: number }[] = [];
-      const traverse = (acc: Account, depth: number) => {
-        result.push({ account: acc, depth });
-        const children = parentToChildren.get(acc.id) || [];
-        // sort by code or name
-        children.sort((a, b) => a.code.localeCompare(b.code));
-        children.forEach(child => traverse(child, depth + 1));
-      };
-
-      roots.sort((a, b) => a.code.localeCompare(b.code));
-      roots.forEach(r => traverse(r, 0));
-      return result;
-    };
-
     return {
-      asset: getNested('asset'),
-      liability: getNested('liability'),
-      equity: getNested('equity'),
-      revenue: getNested('revenue'),
-      expense: getNested('expense'),
-      clearing: getNested('clearing'),
-      suspense: getNested('suspense'),
+      asset: flattenAccountHierarchy(accounts, 'asset'),
+      liability: flattenAccountHierarchy(accounts, 'liability'),
+      equity: flattenAccountHierarchy(accounts, 'equity'),
+      revenue: flattenAccountHierarchy(accounts, 'revenue'),
+      expense: flattenAccountHierarchy(accounts, 'expense'),
+      clearing: flattenAccountHierarchy(accounts, 'clearing'),
+      suspense: flattenAccountHierarchy(accounts, 'suspense'),
     };
   }, [accounts]);
 
@@ -852,6 +823,7 @@ export default function ChartOfAccountsView() {
                   </div>
                   <ShieldCheck className="text-emerald-500/20 shrink-0" size={38} />
                 </div>
+                <Link to={`/transactions?ledgerAccountId=${encodeURIComponent(selectedAccount.id)}`} className="flex w-full items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/15">View this account ledger and edit transactions</Link>
 
                 {/* routing and account number details block */}
                 {(selectedAccount.institution || selectedAccount.accountNumber || selectedAccount.routingNumber) && (

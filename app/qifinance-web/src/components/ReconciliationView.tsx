@@ -9,6 +9,7 @@ import SearchableAccountSelect from './SearchableAccountSelect';
 import { Statement, Transaction, Attachment } from '../types';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
 import { formatLocalDate } from '../lib/financeMath';
+import { useSearchParams } from 'react-router-dom';
 import { 
   CheckCircle, AlertCircle, Calendar, Plus, Trash2, 
   ArrowRight, ShieldAlert, CheckSquare, Square, DollarSign,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 
 export default function ReconciliationView() {
+  const [searchParams] = useSearchParams();
   const today = new Date();
   const currentMonthStart = formatLocalDate(new Date(today.getFullYear(), today.getMonth(), 1));
   const currentMonthEnd = formatLocalDate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
@@ -41,7 +43,7 @@ export default function ReconciliationView() {
 
   // New statement form state
   const [showAddForm, setShowAddForm] = useState(false);
-  const [stmtAccount, setStmtAccount] = useState('');
+  const [stmtAccount, setStmtAccount] = useState(searchParams.get('accountId') || '');
   const [stmtStart, setStmtStart] = useState(currentMonthStart);
   const [stmtEnd, setStmtEnd] = useState(currentMonthEnd);
   const [stmtOpening, setStmtOpening] = useState('0.00');

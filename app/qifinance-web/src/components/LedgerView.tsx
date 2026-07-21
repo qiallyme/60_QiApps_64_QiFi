@@ -12,7 +12,7 @@ import {
   ArrowUpRight, ArrowDownLeft, Tag, RefreshCw, Plus, X, Edit2,
   Download, Upload, WandSparkles
 } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import TransactionForm from './TransactionForm';
 import { formatLocalDate, parseLocalDate, recurringOccurrences } from '../lib/financeMath';
 
@@ -30,10 +30,13 @@ export default function LedgerView() {
     importData,
     financialAccounts,
     rules,
-    addRule
+    addRule,
+    toggleReconcileTransaction
   } = useQiStore();
 
   const { pathname } = useLocation();
+  const [searchParams] = useSearchParams();
+  const requestedAccount = searchParams.get('financialAccountId') || searchParams.get('ledgerAccountId') || 'all';
 
   // Editing transaction state
   const [editingTxId, setEditingTxId] = useState<string | null>(null);
@@ -70,7 +73,7 @@ export default function LedgerView() {
 
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterAccount, setFilterAccount] = useState('all');
+  const [filterAccount, setFilterAccount] = useState(requestedAccount);
   const [filterTag, setFilterTag] = useState('all');
   const [filterReconciled, setFilterReconciled] = useState('all'); // all, yes, no
   const [filterEvidence, setFilterEvidence] = useState('all'); // all, yes, no
@@ -89,6 +92,8 @@ export default function LedgerView() {
       setShowAddForm(true);
     }
   }, [pathname]);
+
+  useEffect(() => setFilterAccount(requestedAccount), [requestedAccount]);
 
 
   // Collect all unique tags
@@ -556,9 +561,8 @@ export default function LedgerView() {
               className="bg-zinc-950/80 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 font-medium focus:outline-none focus:border-zinc-700"
             >
               <option value="all">All Accounts</option>
-              {accounts.map(a => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
+              <optgroup label="Financial accounts">{financialAccounts.map(a => <option key={a.id} value={a.id}>{a.institution ? `${a.institution} — ` : ''}{a.name}</option>)}</optgroup>
+              <optgroup label="Chart of accounts">{accounts.map(a => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}</optgroup>
             </select>
 
             {/* Tag Select */}
@@ -609,6 +613,11 @@ export default function LedgerView() {
         </div>
       </div>
 
+      {financialAccounts.some(account => account.id === filterAccount) && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm">
+        <span className="text-zinc-300">Viewing <strong className="text-white">{financialAccounts.find(account => account.id === filterAccount)?.name}</strong></span>
+        <Link to={`/reconcile?accountId=${encodeURIComponent(filterAccount)}`} className="font-semibold text-emerald-400 hover:text-emerald-300">Open reconciliation →</Link>
+      </div>}
+
       {/* LEDGER ENTRIES LIST */}
       <div className="bg-zinc-900/40 rounded-2xl border border-zinc-800/80 shadow-2xl overflow-hidden">
         <div className="px-5 py-4 border-b border-zinc-800/80 flex justify-between items-center bg-zinc-900/80">
@@ -648,6 +657,7 @@ export default function LedgerView() {
               const categoryLine = txLedgers.find(line => line.accountId !== sourceFinancialAccount?.defaultLedgerAccountId);
               const suggestedPattern = (tx.counterparty || tx.description).trim().toLowerCase().split(/\s+/).slice(0, 3).join(' ');
               const matchingRule = rules.some(rule => rule.pattern.toLowerCase() === suggestedPattern);
+              const eligibleStatements = statements.filter(statement => statement.accountId === (tx.financialAccountId || tx.sourceAccountId));
 
               return (
                 <div key={tx.id} className="transition-all hover:bg-zinc-900/30">
@@ -797,7 +807,13 @@ export default function LedgerView() {
                             </button>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-4">
+                          <div className="flex flex-wrap items-center gap-4">
+                            <label className="flex items-center gap-2 text-[11px] text-zinc-400">Reconciliation
+                              <select value={tx.reconciliationId || ''} onChange={(event) => void toggleReconcileTransaction(tx.id, event.target.value || null)} className="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-200">
+                                <option value="">Unreconciled</option>
+                                {eligibleStatements.map(statement => <option key={statement.id} value={statement.id}>{statement.startDate}–{statement.endDate}</option>)}
+                              </select>
+                            </label>
                             <button
                               onClick={() => {
                                 setEditingTxId(tx.id);

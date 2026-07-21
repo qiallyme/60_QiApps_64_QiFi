@@ -98,6 +98,12 @@ async function patchJson<T>(path: string, body: unknown, fallback: string): Prom
   });
 }
 
+async function putJson<T>(path: string, body: unknown, fallback: string): Promise<T> {
+  const headers = await authHeaders();
+  headers.set('Content-Type', 'application/json');
+  return requestJson<T>(path, fallback, { method: 'PUT', headers, body: JSON.stringify(body) });
+}
+
 async function deleteJson<T>(path: string, fallback: string): Promise<T> {
   const headers = await authHeaders();
   return requestJson<T>(path, fallback, { method: 'DELETE', headers });
@@ -475,5 +481,17 @@ export const qifinanceApi = {
 
   async deleteObligation(id: string): Promise<any> {
     return deleteJson(`/api/finance/obligations/${idPath(id)}`, `Failed to delete obligation ${id}`);
+  },
+
+  async getTransactionAllocations(transactionId: string): Promise<any[]> {
+    return requestJson(`/api/finance/transactions/${idPath(transactionId)}/allocations`, 'Failed to load transaction allocations');
+  },
+
+  async getCounterpartyAllocations(counterpartyId: string): Promise<any[]> {
+    return requestJson(`/api/finance/counterparties/${idPath(counterpartyId)}/allocations`, 'Failed to load counterparty allocations');
+  },
+
+  async replaceTransactionAllocations(transactionId: string, allocations: unknown[]): Promise<any[]> {
+    return putJson(`/api/finance/transactions/${idPath(transactionId)}/allocations`, { allocations }, 'Failed to save transaction allocations');
   },
 };
