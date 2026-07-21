@@ -475,6 +475,10 @@ export const qifinanceApi = {
     return postJson('/api/finance/obligations', obligation, 'Failed to create obligation');
   },
 
+  async createOpeningDebt(input: { counterpartyId: string; liabilityAccountId: string; amount: number; description: string; incurredDate: string; dueDate?: string | null }): Promise<any> {
+    return postJson('/api/finance/obligations/opening-debt', input, 'Failed to create opening debt');
+  },
+
   async updateObligation(id: string, obligation: any): Promise<any> {
     return patchJson(`/api/finance/obligations/${idPath(id)}`, obligation, `Failed to update obligation ${id}`);
   },

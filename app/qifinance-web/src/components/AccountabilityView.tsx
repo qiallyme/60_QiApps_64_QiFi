@@ -7,6 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { useQiStore } from '../store';
 import { AccountabilityObligation } from '../types';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
+import { qifinanceApi } from '../lib/qifinanceApi';
 import { 
   ShieldAlert, AlertTriangle, CheckSquare, PlusCircle, Calendar, 
   Trash2, User, Building2, HelpCircle, Tag, DollarSign, RefreshCw, Check
@@ -21,7 +22,9 @@ export default function AccountabilityView() {
     deleteObligation,
     attachments,
     addAttachment,
-    deleteAttachment
+    deleteAttachment,
+    accounts,
+    refreshData
   } = useQiStore();
 
   const [expandedOblId, setExpandedOblId] = useState<string | null>(null);
@@ -113,6 +116,10 @@ export default function AccountabilityView() {
     return '';
   });
   const [oblIncurredDate, setOblIncurredDate] = useState(new Date().toISOString().slice(0, 10));
+  const [postAsOpeningDebt, setPostAsOpeningDebt] = useState(false);
+  const [liabilityAccountId, setLiabilityAccountId] = useState('');
+  const [formError, setFormError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const [isDraftSaved, setIsDraftSaved] = useState(false);
 
@@ -189,20 +196,23 @@ export default function AccountabilityView() {
   }, [obligations, activeFilter]);
 
   // Submit Obligation
-  const handleAddObligation = (e: React.FormEvent) => {
+  const handleAddObligation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!oblCpId || !oblAmount || isNaN(parseFloat(oblAmount)) || !oblDesc.trim()) return;
-
-    addObligation({
-      counterpartyId: oblCpId,
-      amount: parseFloat(oblAmount),
-      type: oblType,
-      description: oblDesc.trim(),
-      dueDate: oblDueDate || undefined,
-      incurredDate: oblIncurredDate,
-      status: 'active',
-      transactionId: null
-    });
+    if (postAsOpeningDebt && (!liabilityAccountId || oblType !== 'i_owe')) { setFormError('Choose a liability account for an opening debt.'); return; }
+    setIsSaving(true); setFormError('');
+    try {
+      if (postAsOpeningDebt) {
+        await qifinanceApi.createOpeningDebt({ counterpartyId: oblCpId, liabilityAccountId, amount: parseFloat(oblAmount), description: oblDesc.trim(), incurredDate: oblIncurredDate, dueDate: oblDueDate || null });
+        await refreshData();
+      } else {
+        await addObligation({ counterpartyId: oblCpId, amount: parseFloat(oblAmount), type: oblType, description: oblDesc.trim(), dueDate: oblDueDate || undefined, incurredDate: oblIncurredDate, status: 'active', transactionId: null });
+      }
+    } catch (reason) {
+      setFormError(reason instanceof Error ? reason.message : 'Could not save this debt.');
+      setIsSaving(false);
+      return;
+    }
 
     setOblAmount('');
     setOblCpId('');
@@ -210,9 +220,12 @@ export default function AccountabilityView() {
     setOblDesc('');
     setOblDueDate('');
     setOblIncurredDate(new Date().toISOString().slice(0, 10));
+    setPostAsOpeningDebt(false);
+    setLiabilityAccountId('');
     localStorage.removeItem('qifi_draft_obligation_global');
     setIsDraftSaved(false);
     setShowAddForm(false);
+    setIsSaving(false);
   };
 
   const handleToggleStatus = (ob: AccountabilityObligation) => {
@@ -367,7 +380,13 @@ export default function AccountabilityView() {
                 className="w-full bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-700"
               />
             </div>
+            {oblType === 'i_owe' && <div className="sm:col-span-2 md:col-span-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 space-y-3">
+              <label className="flex items-start gap-2 text-xs text-zinc-300"><input type="checkbox" checked={postAsOpeningDebt} onChange={(event) => setPostAsOpeningDebt(event.target.checked)} className="mt-0.5"/><span><strong className="block text-amber-300">This is an old debt / opening balance</strong>Post it directly to a liability against Opening Balance Equity. It will not use a bank account or appear as an expense.</span></label>
+              {postAsOpeningDebt && <label className="block text-[10px] font-bold uppercase text-zinc-400">Liability account<select required value={liabilityAccountId} onChange={(event) => setLiabilityAccountId(event.target.value)} className="mt-1 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"><option value="">Choose liability</option>{accounts.filter((account) => account.type === 'liability' && account.isActive).map((account) => <option key={account.id} value={account.id}>{account.code} — {account.name}</option>)}</select></label>}
+            </div>}
           </div>
+
+          {formError && <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{formError}</div>}
 
           <div className="flex justify-end items-center gap-3 pt-2 border-t border-zinc-800/40">
             {isDraftSaved && (
@@ -395,9 +414,10 @@ export default function AccountabilityView() {
             </button>
             <button
               type="submit"
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-lg text-xs font-semibold shadow-sm cursor-pointer"
+              disabled={isSaving}
+              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg text-xs font-semibold shadow-sm cursor-pointer"
             >
-              Record Obligation
+              {isSaving ? 'Saving…' : postAsOpeningDebt ? 'Record Opening Debt' : 'Record Obligation'}
             </button>
           </div>
         </form>
