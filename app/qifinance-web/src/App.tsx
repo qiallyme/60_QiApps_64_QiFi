@@ -39,6 +39,7 @@ const ReviewQueueView = lazyWithChunkRecovery(() => import('./components/ReviewQ
 const ImportView = lazyWithChunkRecovery(() => import('./components/ImportView'));
 const ChartOfAccountsView = lazyWithChunkRecovery(() => import('./components/ChartOfAccountsView'));
 const EvidenceView = lazyWithChunkRecovery(() => import('./components/EvidenceView'));
+const ReceiptInboxView = lazyWithChunkRecovery(() => import('./components/ReceiptInboxView'));
 const ReconciliationView = lazyWithChunkRecovery(() => import('./components/ReconciliationView'));
 const ForecastView = lazyWithChunkRecovery(() => import('./components/ForecastView'));
 const CounterpartyView = lazyWithChunkRecovery(() => import('./components/CounterpartyView'));
@@ -161,6 +162,13 @@ function SidebarAndNav() {
                   {pendingCount}
                 </span>
               )}
+            </Link>
+
+            <Link to="/receipts/inbox" className={linkClass('/receipts/inbox')}>
+              <div className="flex items-center gap-2.5">
+                <FileText size={16} className={navIconClass('/receipts/inbox')} />
+                <span>Receipt Inbox</span>
+              </div>
             </Link>
 
             <Link to="/imports" className={linkClass('/imports')}>
@@ -303,7 +311,7 @@ function SidebarAndNav() {
           <aside className="h-[100dvh] w-[min(88vw,22rem)] overflow-y-auto bg-zinc-950 border-r border-zinc-800 p-4 shadow-2xl" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="All QiFi modules">
             <div className="flex items-center justify-between mb-5"><div><p className="font-bold text-white">All modules</p><p className="text-[10px] text-zinc-500">Accounting workspace</p></div><button onClick={() => setMobileMenuOpen(false)} className="h-10 w-10 rounded-xl bg-zinc-900 text-zinc-300 flex items-center justify-center" aria-label="Close module menu"><X size={18}/></button></div>
             <nav className="grid gap-1">{[
-              ['/dashboard','Dashboard / Forecast',TrendingUp],['/assistant','Qi Assistant',Bot],['/imports/review','Review Queue',Inbox],['/imports','Ingest Bank Data',Sparkles],['/transactions','Transactions Log',BookOpen],['/financial-accounts','Financial Accounts',WalletCards],['/accounts','Chart of Accounts',Layers],['/rules','Category Rules',Sliders],['/counterparties','Counterparties',Users],['/accountability','Accountability / IOUs',ShieldAlert],['/evidence','Receipts & Evidence',FileText],['/reconcile','Statement Reconcile',ShieldCheck],['/reports','Business P&L Reports',BarChart2],['/settings','Settings',SettingsIcon]
+              ['/dashboard','Dashboard / Forecast',TrendingUp],['/assistant','Qi Assistant',Bot],['/imports/review','Review Queue',Inbox],['/receipts/inbox','Receipt Inbox',FileText],['/imports','Ingest Bank Data',Sparkles],['/transactions','Transactions Log',BookOpen],['/financial-accounts','Financial Accounts',WalletCards],['/accounts','Chart of Accounts',Layers],['/rules','Category Rules',Sliders],['/counterparties','Counterparties',Users],['/accountability','Accountability / IOUs',ShieldAlert],['/evidence','Receipts & Evidence',FileText],['/reconcile','Statement Reconcile',ShieldCheck],['/reports','Business P&L Reports',BarChart2],['/settings','Settings',SettingsIcon]
             ].map(([path,label,Icon]: any) => <Link key={path} to={path} className={`${linkClass(path)} min-h-11`}><div className="flex items-center gap-3"><Icon size={18} className={navIconClass(path)}/><span>{label}</span></div></Link>)}</nav>
           </aside>
         </div>}
@@ -321,6 +329,7 @@ function SidebarAndNav() {
               <Route path="/transactions/new" element={<LedgerView />} />
               <Route path="/imports" element={<ImportView />} />
               <Route path="/imports/review" element={<ReviewQueueView />} />
+              <Route path="/receipts/inbox" element={<ReceiptInboxView />} />
               <Route path="/rules" element={<CategoryRulesView />} />
               <Route path="/counterparties" element={<CounterpartyView />} />
               <Route path="/counterparties/:id" element={<CounterpartyView />} />

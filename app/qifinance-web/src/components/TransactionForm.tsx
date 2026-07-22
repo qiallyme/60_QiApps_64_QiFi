@@ -9,8 +9,9 @@ import SearchableAccountSelect from './SearchableAccountSelect';
 export interface TransactionFormProps {
   transaction?: Transaction | null;
   categoryAccountId?: string;
+  initialValues?: Partial<Pick<Transaction, 'date' | 'amount' | 'description' | 'sourceAccountId' | 'categoryId' | 'counterparty' | 'tags'>>;
   onCancel: () => void;
-  onSaved?: (transaction: Transaction) => void;
+  onSaved?: (transaction: Transaction) => void | Promise<void>;
 }
 
 interface PendingAttachment {
@@ -27,22 +28,23 @@ type UnifiedAttachmentItem =
 
 const today = () => new Date().toISOString().split('T')[0];
 
-export default function TransactionForm({ transaction, categoryAccountId, onCancel, onSaved }: TransactionFormProps) {
+export default function TransactionForm({ transaction, categoryAccountId, initialValues, onCancel, onSaved }: TransactionFormProps) {
   const {
     accounts, financialAccounts, counterparties, attachments,
     addCounterparty, addManualTransaction, updateTransaction,
     addAttachment, deleteAttachment,
   } = useQiStore();
   const isEdit = Boolean(transaction);
-  const [date, setDate] = useState(transaction?.date || today());
-  const [direction, setDirection] = useState<'out' | 'in'>((transaction?.amount || 0) < 0 ? 'out' : 'in');
-  const [amount, setAmount] = useState(transaction ? String(Math.abs(transaction.amount)) : '');
-  const [description, setDescription] = useState(transaction?.description || '');
-  const [sourceAccountId, setSourceAccountId] = useState(transaction?.sourceAccountId || financialAccounts[0]?.id || '');
-  const [categoryId, setCategoryId] = useState(transaction?.categoryId || categoryAccountId || 'suspense-uncategorized');
-  const [counterparty, setCounterparty] = useState(transaction?.counterparty || '');
+  const selected = transaction || initialValues;
+  const [date, setDate] = useState(selected?.date || today());
+  const [direction, setDirection] = useState<'out' | 'in'>((selected?.amount || 0) < 0 ? 'out' : 'in');
+  const [amount, setAmount] = useState(selected?.amount ? String(Math.abs(selected.amount)) : '');
+  const [description, setDescription] = useState(selected?.description || '');
+  const [sourceAccountId, setSourceAccountId] = useState(selected?.sourceAccountId || financialAccounts[0]?.id || '');
+  const [categoryId, setCategoryId] = useState(selected?.categoryId || categoryAccountId || 'suspense-uncategorized');
+  const [counterparty, setCounterparty] = useState(selected?.counterparty || '');
   const [newCounterpartyName, setNewCounterpartyName] = useState('');
-  const [tagsText, setTagsText] = useState(transaction?.tags.join(', ') || '');
+  const [tagsText, setTagsText] = useState(selected?.tags?.join(', ') || '');
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [saving, setSaving] = useState(false);
@@ -59,21 +61,22 @@ export default function TransactionForm({ transaction, categoryAccountId, onCanc
   }, [financialAccounts, sourceAccountId]);
 
   useEffect(() => {
-    setDate(transaction?.date || today());
-    setDirection((transaction?.amount || 0) < 0 ? 'out' : 'in');
-    setAmount(transaction ? String(Math.abs(transaction.amount)) : '');
-    setDescription(transaction?.description || '');
-    setSourceAccountId(transaction?.sourceAccountId || financialAccounts[0]?.id || '');
-    setCategoryId(transaction?.categoryId || categoryAccountId || 'suspense-uncategorized');
-    setCounterparty(transaction?.counterparty || '');
+    const values = transaction || initialValues;
+    setDate(values?.date || today());
+    setDirection((values?.amount || 0) < 0 ? 'out' : 'in');
+    setAmount(values?.amount ? String(Math.abs(values.amount)) : '');
+    setDescription(values?.description || '');
+    setSourceAccountId(values?.sourceAccountId || financialAccounts[0]?.id || '');
+    setCategoryId(values?.categoryId || categoryAccountId || 'suspense-uncategorized');
+    setCounterparty(values?.counterparty || '');
     setNewCounterpartyName('');
-    setTagsText(transaction?.tags.join(', ') || '');
+    setTagsText(values?.tags?.join(', ') || '');
     setPendingAttachments([]);
     setPreviewAttachment(null);
     setReceiptProposal(null);
     setReceiptProposalApplied(false);
     setError('');
-  }, [transaction?.id, categoryAccountId]);
+  }, [transaction?.id, initialValues, categoryAccountId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,7 +214,7 @@ export default function TransactionForm({ transaction, categoryAccountId, onCanc
         await addAttachment(saved.id, attachment.fileName, attachment.fileType, attachment.dataUrl, attachment.kind === 'receipt' ? 'Receipt captured from transaction form' : 'Evidence uploaded from transaction form');
       }
       localStorage.removeItem('qifi_draft_ledger');
-      onSaved?.(saved);
+      await onSaved?.(saved);
       onCancel();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Transaction save failed.');

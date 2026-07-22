@@ -427,6 +427,10 @@ export const qifinanceApi = {
     return requestJson(`/api/finance/attachments/${idPath(id)}/receipt-processing`, `Failed to fetch receipt processing ${id}`);
   },
 
+  async updateAttachment(id: string, attachment: any): Promise<any> {
+    return patchJson(`/api/finance/attachments/${idPath(id)}`, attachment, `Failed to update attachment ${id}`);
+  },
+
   async deleteAttachment(id: string): Promise<any> {
     return deleteJson(`/api/finance/attachments/${idPath(id)}`, `Failed to delete attachment ${id}`);
   },
