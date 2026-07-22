@@ -1,7 +1,7 @@
 import { chromium } from '../app/qifinance-web/node_modules/@playwright/test/index.mjs';
 import { writeFile } from 'node:fs/promises';
 
-// Runs after production schema/API deployment to avoid auditing a mixed release.
+// Runs after coordinated production schema/API deployment to avoid auditing a mixed release.
 
 const recordStage = message => writeFile('browser-audit-result.txt', message.slice(0, 130), 'utf8');
 await recordStage('Audit started; validating secret configuration.');
