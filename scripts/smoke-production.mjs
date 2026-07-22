@@ -90,6 +90,7 @@ try {
 
   const liability = state.ledgerAccounts.find((item) => item.type === 'liability' && item.is_active !== false);
   if (!liability) throw new Error('No active liability account is available for the opening-debt smoke test.');
+  // Opening debt is a journal-only mutation and must never fabricate a transaction.
   const openingDebt = await apiRequest('/api/finance/obligations/opening-debt', { method: 'POST', body: JSON.stringify({
     counterpartyId, liabilityAccountId: liability.id, amount: 25, description: `SMOKE_TEST_opening_debt_${smokeId}`,
     incurredDate: new Date().toISOString().slice(0, 10), dueDate: null,
