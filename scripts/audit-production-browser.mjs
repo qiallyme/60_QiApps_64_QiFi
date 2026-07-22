@@ -32,7 +32,7 @@ const viewports = [
   { name: 'tablet-768', width: 768, height: 1024 },
   { name: 'desktop-1440', width: 1440, height: 1000 },
 ];
-const routes = ['/dashboard', '/transactions', '/transactions/new', '/imports', '/imports/review', '/reports', '/reconciliation', '/evidence'];
+const routes = ['/dashboard', '/transactions', '/transactions/new', '/imports', '/imports/review', '/receipts/inbox', '/reports', '/reconcile', '/evidence'];
 const failures = [];
 const browser = await chromium.launch();
 await recordStage('Chromium launched; starting required viewport audit.');
